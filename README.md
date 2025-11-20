@@ -94,5 +94,3 @@ python -m venv ~/venv
 source ~/venv/bin/activate
 pip install "dayamlchecker[mcp]"
 ```
-
-Note: If you have `dayamlchecker` installed in the same, activated virtual environment from which you're running the `codex mcp add` command (or if `dayamlchecker-mcp` is on the PATH for the user that runs Codex), you can use the short command `dayamlchecker-mcp` and do not need to pass an absolute path. If Codex or your Codex IDE is running outside the workspace or under a different process, prefer an absolute path to the Python executable or the CLI for reliability.
