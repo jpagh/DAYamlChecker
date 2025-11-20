@@ -25,5 +25,6 @@ build-backend = "setuptools.build_meta"
 mcp = ["mcp[cli]"]
 
 [project.scripts]
+dayamlchecker = "dayamlchecker.yaml_structure:main"
 dayamlchecker-mcp = "dayamlchecker.mcp.server:main"
 dayamlchecker-gen-mcp = "dayamlchecker.generate_mcp_config:main"
