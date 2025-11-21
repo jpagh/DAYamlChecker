@@ -161,3 +161,7 @@ cython_debug/
 
 # uv
 uv.lock
+
+
+# Node / JS stuff
+node_modules/

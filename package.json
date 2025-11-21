@@ -1,0 +1,25 @@
+{
+  "name": "@suffolklitlab/dayamlchecker",
+  "version": "0.0.1",
+  "description": "An LSP for Docassemble YAML interviews",
+  "main": "lib/index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "npx tsc",
+    "run": "node ./dist/index.js"
+  },
+  "keywords": [],
+  "repository": {},
+  "author": "",
+  "LICENSE": "MIT",
+  "bugs": {
+    "url": "https://github.com/BryceStevenWilley/DAYamlChecker/issues"
+  },
+  "homepage": "",
+  "bin": {},
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "js-yaml": "^4.1.0",
+    "typescript": "^5.9.2"
+  }
+}
