@@ -479,6 +479,36 @@ fields:
             f"Expected hide if variable type error, got: {errs}",
         )
 
+    def test_enable_if_variable_not_on_screen(self):
+        """Error: enable if variable references field NOT on same screen"""
+        invalid = """
+question: |
+  What information do you need?
+fields:
+  - What's your favorite fruit?: favorite_fruit
+    enable if: some_previous_var
+"""
+        errs = find_errors_from_string(invalid, input_file="<string_invalid>")
+        self.assertTrue(
+            any("enable if" in e.err_str.lower() and "not defined on this screen" in e.err_str.lower() for e in errs),
+            f"Expected enable if 'not defined on screen' error, got: {errs}",
+        )
+
+    def test_disable_if_variable_not_on_screen(self):
+        """Error: disable if variable references field NOT on same screen"""
+        invalid = """
+question: |
+  What information do you need?
+fields:
+  - What's your favorite fruit?: favorite_fruit
+    disable if: some_previous_var
+"""
+        errs = find_errors_from_string(invalid, input_file="<string_invalid>")
+        self.assertTrue(
+            any("disable if" in e.err_str.lower() and "not defined on this screen" in e.err_str.lower() for e in errs),
+            f"Expected disable if 'not defined on screen' error, got: {errs}",
+        )
+
     def test_js_show_if_multiple_val_calls(self):
         """Valid: js show if with multiple val() calls"""
         valid = """
@@ -900,6 +930,81 @@ code: |
             any("without a matching guard" in e.err_str.lower() for e in errs),
             f"Expected no interview-order guard error with showifdef guard, got: {errs}",
         )
+
+    def test_interview_order_all_conditional_modifiers_without_guard_error(self):
+        """Each conditional modifier should trigger interview-order guard mismatch when unguarded"""
+        cases = [
+            ("show if", "eviction_reason == 'Other'"),
+            ("hide if", "eviction_reason == 'Other'"),
+            ("enable if", "eviction_reason == 'Other'"),
+            ("disable if", "eviction_reason == 'Other'"),
+            ("js show if", 'val("eviction_reason") === "Other"'),
+            ("js hide if", 'val("eviction_reason") === "Other"'),
+            ("js enable if", 'val("eviction_reason") === "Other"'),
+            ("js disable if", 'val("eviction_reason") === "Other"'),
+        ]
+        for modifier, condition in cases:
+            with self.subTest(modifier=modifier):
+                yaml_text = f"""
+question: |
+  Eviction details
+fields:
+  - Reason: eviction_reason
+    choices:
+      - Nonpayment
+      - Other
+  - Other details: other_details
+    {modifier}: |
+      {condition}
+---
+id: interview_order
+mandatory: True
+code: |
+  other_details
+"""
+                errs = find_errors_from_string(yaml_text, input_file="<string_invalid>")
+                self.assertTrue(
+                    any("without a matching guard" in e.err_str.lower() for e in errs),
+                    f"Expected interview-order guard error for {modifier}, got: {errs}",
+                )
+
+    def test_interview_order_all_conditional_modifiers_with_guard_valid(self):
+        """Each conditional modifier should pass when interview-order code has a matching guard"""
+        cases = [
+            ("show if", "eviction_reason == 'Other'", "if eviction_reason == 'Other':"),
+            ("hide if", "eviction_reason == 'Other'", "if eviction_reason != 'Other':"),
+            ("enable if", "eviction_reason == 'Other'", "if eviction_reason == 'Other':"),
+            ("disable if", "eviction_reason == 'Other'", "if eviction_reason != 'Other':"),
+            ("js show if", 'val("eviction_reason") === "Other"', "if eviction_reason:"),
+            ("js hide if", 'val("eviction_reason") === "Other"', "if not eviction_reason:"),
+            ("js enable if", 'val("eviction_reason") === "Other"', "if eviction_reason:"),
+            ("js disable if", 'val("eviction_reason") === "Other"', "if not eviction_reason:"),
+        ]
+        for modifier, condition, guard in cases:
+            with self.subTest(modifier=modifier):
+                yaml_text = f"""
+question: |
+  Eviction details
+fields:
+  - Reason: eviction_reason
+    choices:
+      - Nonpayment
+      - Other
+  - Other details: other_details
+    {modifier}: |
+      {condition}
+---
+id: interview_order
+mandatory: True
+code: |
+  {guard}
+    other_details
+"""
+                errs = find_errors_from_string(yaml_text, input_file="<string_valid>")
+                self.assertFalse(
+                    any("without a matching guard" in e.err_str.lower() for e in errs),
+                    f"Expected no interview-order guard error for {modifier}, got: {errs}",
+                )
 
     def test_show_hide_nesting_depth_over_two_warns(self):
         """Warn when a single page has show/hide dependency depth greater than two"""

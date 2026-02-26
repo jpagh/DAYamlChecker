@@ -404,7 +404,7 @@ class DAFields:
     }
 
     js_modifier_keys = ("js show if", "js hide if", "js enable if", "js disable if")
-    py_modifier_keys = ("show if", "hide if")
+    py_modifier_keys = ("show if", "hide if", "enable if", "disable if")
 
     def __init__(self, x):
         self.errors = []
@@ -1036,6 +1036,20 @@ class YAMLError:
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_]\w*")
 _SIMPLE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
+_JS_VAL_RE = re.compile(r"""val\s*\(\s*["']([^"']+)["']\s*\)""")
+_SHOW_STYLE_MODIFIERS = {
+    "show if",
+    "enable if",
+    "js show if",
+    "js enable if",
+}
+_HIDE_STYLE_MODIFIERS = {
+    "hide if",
+    "disable if",
+    "js hide if",
+    "js disable if",
+}
+_CONDITIONAL_MODIFIERS = _SHOW_STYLE_MODIFIERS | _HIDE_STYLE_MODIFIERS
 
 
 def _normalize_expr(expr: str) -> str:
@@ -1103,9 +1117,37 @@ def _extract_controller_vars_for_field_modifier(modifier_value: Any) -> set[str]
     return set()
 
 
+def _extract_vars_from_js_condition(cond: str) -> set[str]:
+    if not isinstance(cond, str):
+        return set()
+    return {m.group(1) for m in _JS_VAL_RE.finditer(cond)}
+
+
+def _invert_simple_comparison(cond: str) -> Optional[str]:
+    m = re.match(r"^\s*(.+?)\s*(==|!=)\s*(.+?)\s*$", cond or "")
+    if not m:
+        return None
+    left, op, right = m.groups()
+    inv_op = "!=" if op == "==" else "=="
+    return f"{left.strip()} {inv_op} {right.strip()}"
+
+
 def _guard_candidates_for_modifier(modifier_key: str, modifier_value: Any) -> list[str]:
-    is_hide = modifier_key == "hide if"
+    is_hide = modifier_key in _HIDE_STYLE_MODIFIERS
+    is_js = modifier_key.startswith("js ")
     guards: list[str] = []
+
+    if is_js and isinstance(modifier_value, str):
+        vars_found = sorted(_extract_vars_from_js_condition(modifier_value))
+        for var_name in vars_found:
+            if is_hide:
+                guards.append(f"not ({var_name})")
+                guards.append(f"not {var_name}")
+            else:
+                guards.append(var_name)
+        # Keep raw condition as a fallback for textual matching
+        guards.append(modifier_value.strip())
+        return [guard for guard in guards if guard]
 
     if isinstance(modifier_value, str):
         cond = modifier_value.strip()
@@ -1114,6 +1156,9 @@ def _guard_candidates_for_modifier(modifier_key: str, modifier_value: Any) -> li
         if is_hide:
             guards.append(f"not ({cond})")
             guards.append(f"not {cond}")
+            inverted = _invert_simple_comparison(cond)
+            if inverted:
+                guards.append(inverted)
         else:
             guards.append(cond)
         return guards
@@ -1161,7 +1206,7 @@ def _extract_conditional_fields_from_doc(
         if not field_var or not isinstance(field_item, dict):
             continue
 
-        for modifier_key in ("show if", "hide if"):
+        for modifier_key in _CONDITIONAL_MODIFIERS:
             if modifier_key not in field_item:
                 continue
             modifier_value = field_item[modifier_key]
