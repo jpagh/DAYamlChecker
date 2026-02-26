@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import sys
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -387,19 +388,41 @@ def format_yaml_file(
     return formatted, changed
 
 
-def _collect_yaml_files(paths: list[Path]) -> list[Path]:
+def _collect_yaml_files(
+    paths: list[Path], check_all: bool = False
+) -> list[Path]:
     """
     Expand paths to a list of YAML files.
 
     - Files are included if they have .yml or .yaml extension
     - Directories are recursively searched for YAML files
     """
+    def _is_default_ignored_dir(dirname: str) -> bool:
+        return (
+            dirname.startswith(".git")
+            or dirname.startswith(".github")
+            or dirname.startswith(".venv")
+            or dirname == "sources"
+        )
+
     yaml_files = []
     for path in paths:
         if path.is_dir():
-            # Recursively find all YAML files
-            yaml_files.extend(path.rglob("*.yml"))
-            yaml_files.extend(path.rglob("*.yaml"))
+            # Recursively find all YAML files, pruning ignored directories
+            for root, dirnames, filenames in os.walk(path, topdown=True):
+                if not check_all and _is_default_ignored_dir(Path(root).name):
+                    dirnames[:] = []
+                    continue
+                if not check_all:
+                    dirnames[:] = [
+                        dirname
+                        for dirname in dirnames
+                        if not _is_default_ignored_dir(dirname)
+                    ]
+                root_path = Path(root)
+                for filename in filenames:
+                    if filename.lower().endswith((".yml", ".yaml")):
+                        yaml_files.append(root_path / filename)
         elif path.suffix.lower() in (".yml", ".yaml"):
             yaml_files.append(path)
     seen = set()
@@ -457,6 +480,14 @@ Examples:
         action="store_true",
         help="Only output errors",
     )
+    parser.add_argument(
+        "--check-all",
+        action="store_true",
+        help=(
+            "Do not ignore default directories during recursive search "
+            "(.git*, .github*, sources)"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -466,8 +497,7 @@ Examples:
     )
 
     # Collect all YAML files from paths (handles directories recursively)
-    yaml_files = _collect_yaml_files(args.files)
-
+    yaml_files = _collect_yaml_files(args.files, check_all=args.check_all)
     if not yaml_files:
         print("No YAML files found.", file=sys.stderr)
         return 1
