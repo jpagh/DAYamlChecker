@@ -24,6 +24,7 @@ from typing import Any
 
 import black
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 __all__ = [
     "format_yaml_file",
@@ -252,7 +253,7 @@ def _collect_text_replacements_for_doc(
     """
     replacements: list[tuple[int, int, str, tuple[str, ...]]] = []
 
-    if isinstance(doc, dict):
+    if isinstance(doc, CommentedMap):
         for key, value in list(doc.items()):
             key_str = str(key)
             current_path = path + (key_str,)
@@ -289,14 +290,14 @@ def _collect_text_replacements_for_doc(
                             )
             else:
                 # Recurse into nested structures
-                if isinstance(value, (dict, list)):
+                if isinstance(value, (CommentedMap, CommentedSeq)):
                     replacements.extend(
                         _collect_text_replacements_for_doc(
                             value, lines, config, current_path
                         )
                     )
 
-    elif isinstance(doc, list):
+    elif isinstance(doc, CommentedSeq):
         for idx, item in enumerate(doc):
             replacements.extend(
                 _collect_text_replacements_for_doc(
@@ -389,7 +390,9 @@ def format_yaml_file(
 
 
 def _collect_yaml_files(
-    paths: list[Path], check_all: bool = False
+    paths: list[Path],
+    check_all: bool = False,
+    include_default_ignores: bool | None = None,
 ) -> list[Path]:
     """
     Expand paths to a list of YAML files.
@@ -397,6 +400,7 @@ def _collect_yaml_files(
     - Files are included if they have .yml or .yaml extension
     - Directories are recursively searched for YAML files
     """
+
     def _is_default_ignored_dir(dirname: str) -> bool:
         return (
             dirname.startswith(".git")
@@ -405,15 +409,18 @@ def _collect_yaml_files(
             or dirname == "sources"
         )
 
-    yaml_files = []
+    if include_default_ignores is None:
+        include_default_ignores = not check_all
+
+    yaml_files: list[Path] = []
     for path in paths:
         if path.is_dir():
             # Recursively find all YAML files, pruning ignored directories
             for root, dirnames, filenames in os.walk(path, topdown=True):
-                if not check_all and _is_default_ignored_dir(Path(root).name):
+                if include_default_ignores and _is_default_ignored_dir(Path(root).name):
                     dirnames[:] = []
                     continue
-                if not check_all:
+                if include_default_ignores:
                     dirnames[:] = [
                         dirname
                         for dirname in dirnames
