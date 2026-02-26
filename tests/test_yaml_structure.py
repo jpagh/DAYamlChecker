@@ -490,7 +490,11 @@ fields:
 """
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
-            any("enable if" in e.err_str.lower() and "not defined on this screen" in e.err_str.lower() for e in errs),
+            any(
+                "enable if" in e.err_str.lower()
+                and "not defined on this screen" in e.err_str.lower()
+                for e in errs
+            ),
             f"Expected enable if 'not defined on screen' error, got: {errs}",
         )
 
@@ -505,7 +509,11 @@ fields:
 """
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
-            any("disable if" in e.err_str.lower() and "not defined on this screen" in e.err_str.lower() for e in errs),
+            any(
+                "disable if" in e.err_str.lower()
+                and "not defined on this screen" in e.err_str.lower()
+                for e in errs
+            ),
             f"Expected disable if 'not defined on screen' error, got: {errs}",
         )
 
@@ -973,12 +981,32 @@ code: |
         cases = [
             ("show if", "eviction_reason == 'Other'", "if eviction_reason == 'Other':"),
             ("hide if", "eviction_reason == 'Other'", "if eviction_reason != 'Other':"),
-            ("enable if", "eviction_reason == 'Other'", "if eviction_reason == 'Other':"),
-            ("disable if", "eviction_reason == 'Other'", "if eviction_reason != 'Other':"),
+            (
+                "enable if",
+                "eviction_reason == 'Other'",
+                "if eviction_reason == 'Other':",
+            ),
+            (
+                "disable if",
+                "eviction_reason == 'Other'",
+                "if eviction_reason != 'Other':",
+            ),
             ("js show if", 'val("eviction_reason") === "Other"', "if eviction_reason:"),
-            ("js hide if", 'val("eviction_reason") === "Other"', "if not eviction_reason:"),
-            ("js enable if", 'val("eviction_reason") === "Other"', "if eviction_reason:"),
-            ("js disable if", 'val("eviction_reason") === "Other"', "if not eviction_reason:"),
+            (
+                "js hide if",
+                'val("eviction_reason") === "Other"',
+                "if not eviction_reason:",
+            ),
+            (
+                "js enable if",
+                'val("eviction_reason") === "Other"',
+                "if eviction_reason:",
+            ),
+            (
+                "js disable if",
+                'val("eviction_reason") === "Other"',
+                "if not eviction_reason:",
+            ),
         ]
         for modifier, condition, guard in cases:
             with self.subTest(modifier=modifier):

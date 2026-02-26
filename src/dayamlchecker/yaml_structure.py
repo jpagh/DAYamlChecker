@@ -578,7 +578,9 @@ class DAFields:
                                 + err_msg
                                 + " (unable to fully validate screen variables because this screen uses fields: code)"
                             )
-                        self.errors.append((err_msg, self._line_for(field_item, err[1])))
+                        self.errors.append(
+                            (err_msg, self._line_for(field_item, err[1]))
+                        )
 
             for py_key in self.py_modifier_keys:
                 if py_key in field_item:
