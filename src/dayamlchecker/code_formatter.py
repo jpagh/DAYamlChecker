@@ -308,6 +308,11 @@ def _collect_text_replacements_for_doc(
     return replacements
 
 
+def _contains_jinja_syntax(content: str) -> bool:
+    """Check if content contains Jinja template syntax."""
+    return "{%" in content or "{{" in content or "{#" in content
+
+
 def format_yaml_string(
     yaml_content: str,
     config: FormatterConfig | None = None,
@@ -325,6 +330,9 @@ def format_yaml_string(
 
     Returns:
         Tuple of (formatted YAML string, whether any changes were made)
+
+    Raises:
+        Exception: If YAML parsing fails for reasons other than Jinja templates
     """
     if config is None:
         config = FormatterConfig()
@@ -335,7 +343,14 @@ def format_yaml_string(
     # Use ruamel's parser to obtain position metadata; we'll replace text
 
     # Load as a stream to handle multi-document YAML
-    documents = list(yaml.load_all(yaml_content))
+    try:
+        documents = list(yaml.load_all(yaml_content))
+    except Exception:
+        # If it's a Jinja template error, return without processing
+        if _contains_jinja_syntax(yaml_content):
+            return yaml_content, False
+        # For other errors, re-raise
+        raise
 
     lines = yaml_content.splitlines(keepends=True)
     all_replacements: list[tuple[int, int, str, tuple[str, ...]]] = []
@@ -383,10 +398,13 @@ def format_yaml_file(
 
     formatted, changed = format_yaml_string(content, config)
 
-    if changed and write:
+    # Only consider it changed if the actual file content differs
+    actual_change = formatted != content
+
+    if actual_change and write:
         path.write_text(formatted, encoding="utf-8")
 
-    return formatted, changed
+    return formatted, actual_change
 
 
 def _collect_yaml_files(
@@ -503,6 +521,18 @@ Examples:
         convert_indent_4_to_2=not args.no_indent_conversion,
     )
 
+    # Precompute resolved base dirs for relative path display
+    base_dirs = [p.resolve() if p.is_dir() else p.resolve().parent for p in args.files]
+
+    def _display(file_path: Path) -> Path:
+        resolved = file_path.resolve()
+        for base in base_dirs:
+            try:
+                return resolved.relative_to(base)
+            except ValueError:
+                continue
+        return file_path
+
     # Collect all YAML files from paths (handles directories recursively)
     yaml_files = _collect_yaml_files(args.files, check_all=args.check_all)
     if not yaml_files:
@@ -513,15 +543,24 @@ Examples:
     files_changed = 0
     files_unchanged = 0
     files_error = 0
+    files_skipped_jinja = 0
 
     for file_path in yaml_files:
         if not file_path.exists():
-            print(f"Error: File not found: {file_path}", file=sys.stderr)
+            print(f"Error: File not found: {_display(file_path)}", file=sys.stderr)
             files_error += 1
             exit_code = 1
             continue
 
         try:
+            content = file_path.read_text(encoding="utf-8")
+
+            if _contains_jinja_syntax(content):
+                files_skipped_jinja += 1
+                if not args.quiet:
+                    print(f"Skipped (Jinja): {_display(file_path)}")
+                continue
+
             _, changed = format_yaml_file(
                 file_path,
                 config=config,
@@ -531,26 +570,29 @@ Examples:
             if changed:
                 files_changed += 1
                 if args.check:
-                    print(f"Would reformat: {file_path}")
+                    print(f"Would reformat: {_display(file_path)}")
                     exit_code = 1
                 elif not args.quiet:
-                    print(f"Reformatted: {file_path}")
+                    print(f"Reformatted: {_display(file_path)}")
             else:
                 files_unchanged += 1
                 if not args.quiet:
-                    print(f"Unchanged: {file_path}")
+                    print(f"Unchanged: {_display(file_path)}")
 
         except Exception as e:
-            print(f"Error processing {file_path}: {e}", file=sys.stderr)
+            print(f"Error processing {_display(file_path)}: {e}", file=sys.stderr)
             files_error += 1
             exit_code = 1
 
     if not args.quiet:
-        total = files_changed + files_unchanged + files_error
+        total = files_changed + files_unchanged + files_error + files_skipped_jinja
+        summary_parts = [f"{files_changed} reformatted", f"{files_unchanged} unchanged"]
+        if files_error:
+            summary_parts.append(f"{files_error} errors")
+        if files_skipped_jinja:
+            summary_parts.append(f"{files_skipped_jinja} skipped (Jinja)")
         print()
-        print(
-            f"Summary: {files_changed} reformatted, {files_unchanged} unchanged, {files_error} errors ({total} total)"
-        )
+        print(f"Summary: {', '.join(summary_parts)} ({total} total)")
 
     return exit_code
 
