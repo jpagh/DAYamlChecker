@@ -16,7 +16,6 @@ repos:
         language: python
         additional_dependencies: [mypy, types-PyYAML, black, ruamel.yaml]
         args: [".", "--exclude", "^build/", "--explicit-package-bases"]
-        types: [python]
         pass_filenames: false
         stages: [push]
 
