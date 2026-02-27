@@ -5,6 +5,7 @@ from dayamlchecker.code_formatter import (
     FormatterConfig,
     _convert_indent_4_to_2,
     _strip_common_indent,
+    _contains_jinja_syntax,
 )
 
 
@@ -228,6 +229,61 @@ code: |
         self.assertIn("question: |\n  Hello", result)
         # Code block gets formatted
         self.assertIn("if True:\n    x = 1", result)
+
+
+class TestContainsJinjaSyntax(unittest.TestCase):
+    def test_detects_variable_expression(self):
+        self.assertTrue(_contains_jinja_syntax("question: Hello {{ user }}!"))
+
+    def test_detects_block_tag(self):
+        self.assertTrue(_contains_jinja_syntax("{% if condition %}yes{% endif %}"))
+
+    def test_detects_comment_tag(self):
+        self.assertTrue(_contains_jinja_syntax("{# This is a comment #}"))
+
+    def test_detects_whitespace_control_tags(self):
+        self.assertTrue(_contains_jinja_syntax("{%- if x -%}\ncontent\n{%- endif -%}"))
+
+    def test_plain_yaml_not_detected(self):
+        self.assertFalse(
+            _contains_jinja_syntax("question: Hello world\ncode: |\n  x = 1\n")
+        )
+
+    def test_python_single_brace_dict_not_detected(self):
+        self.assertFalse(_contains_jinja_syntax("code: |\n  d = {key: value}\n"))
+
+    def test_empty_string_not_detected(self):
+        self.assertFalse(_contains_jinja_syntax(""))
+
+    def test_plain_text_with_percent_not_detected(self):
+        self.assertFalse(_contains_jinja_syntax("discount: 50%\n"))
+
+
+class TestFormatYamlStringJinja(unittest.TestCase):
+    def test_jinja_variable_file_returned_unchanged(self):
+        yaml_content = "---\nquestion: Hello {{ user }}\ncode: |\n  x = 1\n"
+        result, changed = format_yaml_string(yaml_content)
+        self.assertEqual(result, yaml_content)
+        self.assertFalse(changed)
+
+    def test_jinja_block_tag_returned_unchanged(self):
+        yaml_content = "---\n{% if condition %}\nquestion: test\n{% endif %}\n"
+        result, changed = format_yaml_string(yaml_content)
+        self.assertEqual(result, yaml_content)
+        self.assertFalse(changed)
+
+    def test_jinja_comment_returned_unchanged(self):
+        yaml_content = "{# template comment #}\nquestion: test\n"
+        result, changed = format_yaml_string(yaml_content)
+        self.assertEqual(result, yaml_content)
+        self.assertFalse(changed)
+
+    def test_jinja_with_unformatted_code_still_skipped(self):
+        # Even though code block is unformatted, Jinja file is skipped entirely
+        yaml_content = "---\nquestion: Hello {{ user }}\ncode: |\n  x=1\n"
+        result, changed = format_yaml_string(yaml_content)
+        self.assertEqual(result, yaml_content)
+        self.assertFalse(changed)
 
 
 class TestFormatterConfig(unittest.TestCase):

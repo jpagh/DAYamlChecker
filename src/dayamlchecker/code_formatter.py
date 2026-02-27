@@ -15,9 +15,10 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
+import os
 import re
 import sys
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -70,9 +71,7 @@ def _strip_common_indent(lines: list[str]) -> tuple[list[str], int]:
     indents = []
     for line in lines:
         if line.strip():  # Skip empty/whitespace-only lines
-            match = re.match(r"^( *)", line)
-            if match:
-                indents.append(len(match.group(1)))
+            indents.append(len(line) - len(line.lstrip(" ")))
 
     if not indents:
         return lines, 0
@@ -254,16 +253,13 @@ def _collect_text_replacements_for_doc(
     replacements: list[tuple[int, int, str, tuple[str, ...]]] = []
 
     if isinstance(doc, CommentedMap):
-        for key, value in list(doc.items()):
+        has_lc_key = hasattr(doc.lc, "key")
+        for key, value in doc.items():
             key_str = str(key)
             current_path = path + (key_str,)
 
             # Only consider keys we care about and plain strings
-            if (
-                key_str in config.python_keys
-                and isinstance(value, str)
-                and hasattr(doc.lc, "key")
-            ):
+            if key_str in config.python_keys and isinstance(value, str) and has_lc_key:
                 try:
                     key_line, _ = doc.lc.key(key)
                 except Exception:
@@ -308,9 +304,20 @@ def _collect_text_replacements_for_doc(
     return replacements
 
 
+_JINJA_SYNTAX_RE = re.compile(
+    r"({{.*?}}|{%-?.*?-?%}|{#.*?#})",
+    re.DOTALL,
+)
+
+
 def _contains_jinja_syntax(content: str) -> bool:
-    """Check if content contains Jinja template syntax."""
-    return "{%" in content or "{{" in content or "{#" in content
+    """Check if content contains Jinja template syntax.
+
+    Uses a regex that looks for properly delimited Jinja constructs
+    ({{ ... }}, {% ... %}, {# ... #}) rather than simple substring checks
+    to avoid false positives from Python dicts or documentation.
+    """
+    return _JINJA_SYNTAX_RE.search(content) is not None
 
 
 def format_yaml_string(
@@ -332,7 +339,7 @@ def format_yaml_string(
         Tuple of (formatted YAML string, whether any changes were made)
 
     Raises:
-        Exception: If YAML parsing fails for reasons other than Jinja templates
+        Exception: If YAML parsing fails (Jinja files are returned unchanged before parsing)
     """
     if config is None:
         config = FormatterConfig()
@@ -342,15 +349,13 @@ def format_yaml_string(
     yaml.width = 4096  # Prevent line wrapping in strings
     # Use ruamel's parser to obtain position metadata; we'll replace text
 
+    # Bail out early for Jinja templates before attempting YAML parsing,
+    # since Jinja syntax is not valid YAML and would cause parse errors.
+    if _contains_jinja_syntax(yaml_content):
+        return yaml_content, False
+
     # Load as a stream to handle multi-document YAML
-    try:
-        documents = list(yaml.load_all(yaml_content))
-    except Exception:
-        # If it's a Jinja template error, return without processing
-        if _contains_jinja_syntax(yaml_content):
-            return yaml_content, False
-        # For other errors, re-raise
-        raise
+    documents = list(yaml.load_all(yaml_content))
 
     lines = yaml_content.splitlines(keepends=True)
     all_replacements: list[tuple[int, int, str, tuple[str, ...]]] = []
@@ -374,7 +379,8 @@ def format_yaml_string(
 
             lines[start : end + 1] = new_lines
 
-    return "".join(lines), bool(all_replacements)
+    result = "".join(lines)
+    return result, result != yaml_content
 
 
 def format_yaml_file(
@@ -398,13 +404,10 @@ def format_yaml_file(
 
     formatted, changed = format_yaml_string(content, config)
 
-    # Only consider it changed if the actual file content differs
-    actual_change = formatted != content
-
-    if actual_change and write:
+    if changed and write:
         path.write_text(formatted, encoding="utf-8")
 
-    return formatted, actual_change
+    return formatted, changed
 
 
 def _collect_yaml_files(
@@ -435,16 +438,14 @@ def _collect_yaml_files(
         if path.is_dir():
             # Recursively find all YAML files, pruning ignored directories
             for root, dirnames, filenames in os.walk(path, topdown=True):
-                if include_default_ignores and _is_default_ignored_dir(Path(root).name):
-                    dirnames[:] = []
-                    continue
-                if include_default_ignores:
-                    dirnames[:] = [
-                        dirname
-                        for dirname in dirnames
-                        if not _is_default_ignored_dir(dirname)
-                    ]
                 root_path = Path(root)
+                if include_default_ignores:
+                    if _is_default_ignored_dir(root_path.name):
+                        dirnames[:] = []
+                        continue
+                    dirnames[:] = [
+                        d for d in dirnames if not _is_default_ignored_dir(d)
+                    ]
                 for filename in filenames:
                     if filename.lower().endswith((".yml", ".yaml")):
                         yaml_files.append(root_path / filename)
@@ -462,8 +463,6 @@ def _collect_yaml_files(
 
 def main() -> int:
     """CLI entry point."""
-    import argparse
-
     parser = argparse.ArgumentParser(
         description="Format Python code blocks in docassemble YAML files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -531,7 +530,7 @@ Examples:
                 return resolved.relative_to(base)
             except ValueError:
                 continue
-        return file_path
+        return resolved
 
     # Collect all YAML files from paths (handles directories recursively)
     yaml_files = _collect_yaml_files(args.files, check_all=args.check_all)
@@ -561,11 +560,9 @@ Examples:
                     print(f"Skipped (Jinja): {_display(file_path)}")
                 continue
 
-            _, changed = format_yaml_file(
-                file_path,
-                config=config,
-                write=not args.check,
-            )
+            formatted, changed = format_yaml_string(content, config)
+            if changed and not args.check:
+                file_path.write_text(formatted, encoding="utf-8")
 
             if changed:
                 files_changed += 1
@@ -586,11 +583,17 @@ Examples:
 
     if not args.quiet:
         total = files_changed + files_unchanged + files_error + files_skipped_jinja
-        summary_parts = [f"{files_changed} reformatted", f"{files_unchanged} unchanged"]
+        summary_parts = []
+        if files_changed:
+            summary_parts.append(f"{files_changed} reformatted")
+        if files_unchanged:
+            summary_parts.append(f"{files_unchanged} unchanged")
         if files_error:
             summary_parts.append(f"{files_error} errors")
         if files_skipped_jinja:
             summary_parts.append(f"{files_skipped_jinja} skipped (Jinja)")
+        if not summary_parts:
+            summary_parts.append("0 files processed")
         print()
         print(f"Summary: {', '.join(summary_parts)} ({total} total)")
 
