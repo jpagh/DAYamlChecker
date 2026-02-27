@@ -1313,7 +1313,7 @@ class TestProcessFile(unittest.TestCase):
         out = io.StringIO()
         try:
             with patch("sys.stdout", out):
-                process_file(path)
+                process_file(path, minimal=True)
         finally:
             import os
 
@@ -1328,7 +1328,7 @@ class TestProcessFile(unittest.TestCase):
         out = io.StringIO()
         try:
             with patch("sys.stdout", out):
-                process_file(path)
+                process_file(path, minimal=True)
         finally:
             import os
 
@@ -1343,7 +1343,7 @@ class TestProcessFile(unittest.TestCase):
         out = io.StringIO()
         try:
             with patch("sys.stdout", out):
-                process_file(path)
+                process_file(path, minimal=True)
         finally:
             import os
 
@@ -1370,11 +1370,12 @@ class TestProcessFile(unittest.TestCase):
         finally:
             os.unlink(path)
             os.unlink(ignored_path)
-        # Should print the "ignoring" message, not errors
-        self.assertIn("ignoring", out.getvalue())
+        # Default mode should print "skipped: <file>", not errors
+        self.assertIn("skipped", out.getvalue())
+        self.assertNotIn("error", out.getvalue().lower())
 
-    def test_process_jinja_file_verbose_prints_rendered(self):
-        """With verbose=True, the rendered Jinja output is printed."""
+    def test_process_jinja_file_default_mode_prints_ok_status(self):
+        """Default mode prints the file name and ok (jinja) status per-file."""
         import io
         from dayamlchecker.yaml_structure import process_file
 
@@ -1382,13 +1383,14 @@ class TestProcessFile(unittest.TestCase):
         out = io.StringIO()
         try:
             with patch("sys.stdout", out):
-                process_file(path, verbose=True)
+                process_file(path)
         finally:
             import os
 
             os.unlink(path)
         output = out.getvalue()
-        self.assertIn("Jinja-rendered output", output)
+        self.assertIn("ok (jinja)", output)
+        self.assertNotIn("Jinja-rendered output", output)
 
 
 class TestDAFieldsDeepPaths(unittest.TestCase):
