@@ -80,7 +80,7 @@ def test_formatter_jinja_count_in_summary():
             encoding="utf-8",
         )
 
-        result = _run_formatter("--verbose", str(jinja_file))
+        result = _run_formatter(str(jinja_file))
 
         assert "1 reformatted" in result.stdout
         assert "skipped (Jinja)" not in result.stdout
@@ -107,7 +107,7 @@ def test_formatter_jinja_file_with_clean_code_is_formatted():
         result = _run_formatter(str(jinja_file))
 
         assert result.returncode == 0
-        assert "R" in result.stdout
+        assert "reformatted" in result.stdout
         formatted = jinja_file.read_text(encoding="utf-8")
         assert "x = 1" in formatted
         assert "{{ user }}" in formatted
@@ -170,7 +170,7 @@ def test_formatter_summary_shows_unchanged_for_already_formatted_jinja():
             "# use jinja\n---\nquestion: Hello {{ user }}\n", encoding="utf-8"
         )
 
-        result = _run_formatter("--verbose", str(jinja_file))
+        result = _run_formatter(str(jinja_file))
 
         assert "unchanged" in result.stdout
         assert "skipped (Jinja)" not in result.stdout
@@ -186,7 +186,7 @@ def test_formatter_jinja_without_header_is_error():
         result = _run_formatter(str(bad_file))
 
         assert result.returncode == 1
-        assert "Error" in result.stderr
+        assert "error" in result.stderr
         assert "# use jinja" in result.stderr
         assert bad_file.read_text(encoding="utf-8") == original
 
