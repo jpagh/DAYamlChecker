@@ -15,9 +15,10 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
+import os
 import re
 import sys
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,12 +26,18 @@ from typing import Any
 import black
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
+from dayamlchecker._jinja import (
+    JinjaWithoutHeaderError,
+    _contains_jinja_syntax,
+    _has_jinja_header,
+)
 
 __all__ = [
     "format_yaml_file",
     "format_yaml_string",
     "format_python_code",
     "FormatterConfig",
+    "JinjaWithoutHeaderError",
 ]
 
 
@@ -70,9 +77,7 @@ def _strip_common_indent(lines: list[str]) -> tuple[list[str], int]:
     indents = []
     for line in lines:
         if line.strip():  # Skip empty/whitespace-only lines
-            match = re.match(r"^( *)", line)
-            if match:
-                indents.append(len(match.group(1)))
+            indents.append(len(line) - len(line.lstrip(" ")))
 
     if not indents:
         return lines, 0
@@ -254,16 +259,13 @@ def _collect_text_replacements_for_doc(
     replacements: list[tuple[int, int, str, tuple[str, ...]]] = []
 
     if isinstance(doc, CommentedMap):
-        for key, value in list(doc.items()):
+        has_lc_key = hasattr(doc.lc, "key")
+        for key, value in doc.items():
             key_str = str(key)
             current_path = path + (key_str,)
 
             # Only consider keys we care about and plain strings
-            if (
-                key_str in config.python_keys
-                and isinstance(value, str)
-                and hasattr(doc.lc, "key")
-            ):
+            if key_str in config.python_keys and isinstance(value, str) and has_lc_key:
                 try:
                     key_line, _ = doc.lc.key(key)
                 except Exception:
@@ -308,6 +310,82 @@ def _collect_text_replacements_for_doc(
     return replacements
 
 
+# Regex that matches the header line of a block scalar for a Python code key.
+# Captures: (leading_whitespace, key_name, block_style)
+# Examples:
+#   "code: |"  "  validation code: >"  "code: |-"
+_CODE_KEY_RE = re.compile(
+    r"^([ \t]*)(code|validation code):\s*[|>]",
+    re.MULTILINE,
+)
+
+
+def _format_jinja_yaml_string(
+    yaml_content: str,
+    config: FormatterConfig,
+) -> tuple[str, bool]:
+    """Format Python code blocks inside a '# use jinja' YAML file.
+
+    Because Jinja syntax (``{{ }}``, ``{% %}``, ``{# #}``) is not valid YAML,
+    the file cannot be parsed by the normal YAML path.  Instead this function
+    works directly on the raw text:
+
+    1. Locate every ``code:`` / ``validation code:`` block header line using a
+       regex.
+    2. Use :func:`_find_block_body_span` to determine the exact line range of
+       each block body.
+    3. **Skip** any body that itself contains Jinja syntax — those blocks
+       cannot be safely reformatted because the Jinja expressions may not be
+       valid Python.
+    4. Format the remaining bodies with Black via :func:`format_python_code`.
+    5. Apply replacements bottom-up so line indices stay valid.
+
+    Returns the same ``(result, changed)`` tuple as :func:`format_yaml_string`.
+    """
+    lines = yaml_content.splitlines(keepends=True)
+    replacements: list[tuple[int, int, str]] = []
+
+    for line_idx, line in enumerate(lines):
+        if not _CODE_KEY_RE.match(line):
+            continue
+
+        body_start, body_end, _body_indent = _find_block_body_span(lines, line_idx)
+        if body_end < body_start:
+            # Empty block body — nothing to format.
+            continue
+
+        body = "".join(lines[body_start : body_end + 1])
+
+        # Don't try to format a code block that itself contains Jinja syntax;
+        # the expressions would make the Python invalid for Black.
+        if _contains_jinja_syntax(body):
+            continue
+
+        try:
+            formatted = format_python_code(body, config)
+        except Exception:
+            # If Black can't parse the block, leave it as-is.
+            continue
+
+        if _normalize_newlines(formatted) != _normalize_newlines(body):
+            replacements.append((body_start, body_end, formatted))
+
+    if not replacements:
+        return yaml_content, False
+
+    # Apply from bottom to top so earlier indices are not invalidated.
+    replacements.sort(key=lambda t: t[0], reverse=True)
+    for start, end, new_text in replacements:
+        new_lines = new_text.splitlines(keepends=True)
+        # Preserve the absence of a trailing newline on the last body line.
+        if end >= start and not lines[end].endswith("\n") and new_lines:
+            new_lines[-1] = new_lines[-1].rstrip("\n")
+        lines[start : end + 1] = new_lines
+
+    result = "".join(lines)
+    return result, result != yaml_content
+
+
 def format_yaml_string(
     yaml_content: str,
     config: FormatterConfig | None = None,
@@ -325,6 +403,9 @@ def format_yaml_string(
 
     Returns:
         Tuple of (formatted YAML string, whether any changes were made)
+
+    Raises:
+        Exception: If YAML parsing fails (Jinja files are returned unchanged before parsing)
     """
     if config is None:
         config = FormatterConfig()
@@ -333,6 +414,21 @@ def format_yaml_string(
     yaml.preserve_quotes = True
     yaml.width = 4096  # Prevent line wrapping in strings
     # Use ruamel's parser to obtain position metadata; we'll replace text
+
+    # Handle Jinja templates before attempting YAML parsing,
+    # since Jinja syntax is not valid YAML and would cause parse errors.
+    if _contains_jinja_syntax(yaml_content):
+        if _has_jinja_header(yaml_content):
+            # Valid: Jinja processing explicitly enabled via '# use jinja' header.
+            # Format Python code blocks that don't themselves contain Jinja syntax;
+            # leave everything else (Jinja expressions, block tags, comments)
+            # exactly as-is.
+            return _format_jinja_yaml_string(yaml_content, config)
+        raise JinjaWithoutHeaderError(
+            "File contains Jinja syntax but is missing '# use jinja' on the first line. "
+            "Per docassemble documentation, add '# use jinja' as the very first line to "
+            "enable Jinja2 processing, or remove the Jinja syntax from the file."
+        )
 
     # Load as a stream to handle multi-document YAML
     documents = list(yaml.load_all(yaml_content))
@@ -359,7 +455,8 @@ def format_yaml_string(
 
             lines[start : end + 1] = new_lines
 
-    return "".join(lines), bool(all_replacements)
+    result = "".join(lines)
+    return result, result != yaml_content
 
 
 def format_yaml_file(
@@ -417,16 +514,14 @@ def _collect_yaml_files(
         if path.is_dir():
             # Recursively find all YAML files, pruning ignored directories
             for root, dirnames, filenames in os.walk(path, topdown=True):
-                if include_default_ignores and _is_default_ignored_dir(Path(root).name):
-                    dirnames[:] = []
-                    continue
-                if include_default_ignores:
-                    dirnames[:] = [
-                        dirname
-                        for dirname in dirnames
-                        if not _is_default_ignored_dir(dirname)
-                    ]
                 root_path = Path(root)
+                if include_default_ignores:
+                    if _is_default_ignored_dir(root_path.name):
+                        dirnames[:] = []
+                        continue
+                    dirnames[:] = [
+                        d for d in dirnames if not _is_default_ignored_dir(d)
+                    ]
                 for filename in filenames:
                     if filename.lower().endswith((".yml", ".yaml")):
                         yaml_files.append(root_path / filename)
@@ -444,8 +539,6 @@ def _collect_yaml_files(
 
 def main() -> int:
     """CLI entry point."""
-    import argparse
-
     parser = argparse.ArgumentParser(
         description="Format Python code blocks in docassemble YAML files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -488,6 +581,12 @@ Examples:
         help="Only output errors",
     )
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print a summary line after processing",
+    )
+    parser.add_argument(
         "--check-all",
         action="store_true",
         help=(
@@ -503,6 +602,18 @@ Examples:
         convert_indent_4_to_2=not args.no_indent_conversion,
     )
 
+    # Precompute resolved base dirs for relative path display
+    base_dirs = [p.resolve() if p.is_dir() else p.resolve().parent for p in args.files]
+
+    def _display(file_path: Path) -> Path:
+        resolved = file_path.resolve()
+        for base in base_dirs:
+            try:
+                return resolved.relative_to(base)
+            except ValueError:
+                continue
+        return resolved
+
     # Collect all YAML files from paths (handles directories recursively)
     yaml_files = _collect_yaml_files(args.files, check_all=args.check_all)
     if not yaml_files:
@@ -513,44 +624,76 @@ Examples:
     files_changed = 0
     files_unchanged = 0
     files_error = 0
+    error_messages: list[str] = []
 
     for file_path in yaml_files:
         if not file_path.exists():
-            print(f"Error: File not found: {file_path}", file=sys.stderr)
+            msg = f"File not found: {_display(file_path)}"
+            error_messages.append(msg)
             files_error += 1
             exit_code = 1
+            if not args.quiet:
+                print("E", end="", flush=True)
             continue
 
         try:
-            _, changed = format_yaml_file(
-                file_path,
-                config=config,
-                write=not args.check,
-            )
+            content = file_path.read_text(encoding="utf-8")
+
+            # Jinja files without the '# use jinja' header are an error.
+            # Files WITH the header are processed by format_yaml_string's
+            # _format_jinja_yaml_string path (only clean code blocks formatted).
+            if _contains_jinja_syntax(content) and not _has_jinja_header(content):
+                msg = (
+                    f"{_display(file_path)} contains Jinja syntax but is "
+                    "missing '# use jinja' on the first line."
+                )
+                error_messages.append(msg)
+                files_error += 1
+                exit_code = 1
+                if not args.quiet:
+                    print("E", end="", flush=True)
+                continue
+
+            formatted, changed = format_yaml_string(content, config)
+            if changed and not args.check:
+                file_path.write_text(formatted, encoding="utf-8")
 
             if changed:
                 files_changed += 1
                 if args.check:
-                    print(f"Would reformat: {file_path}")
+                    print(f"Would reformat: {_display(file_path)}")
                     exit_code = 1
                 elif not args.quiet:
-                    print(f"Reformatted: {file_path}")
+                    print("R", end="", flush=True)
             else:
                 files_unchanged += 1
-                if not args.quiet:
-                    print(f"Unchanged: {file_path}")
+                if not args.quiet and not args.check:
+                    print(".", end="", flush=True)
 
         except Exception as e:
-            print(f"Error processing {file_path}: {e}", file=sys.stderr)
+            msg = f"Error processing {_display(file_path)}: {e}"
+            error_messages.append(msg)
             files_error += 1
             exit_code = 1
+            if not args.quiet:
+                print("E", end="", flush=True)
 
-    if not args.quiet:
-        total = files_changed + files_unchanged + files_error
+    if not args.quiet and not args.check:
         print()
-        print(
-            f"Summary: {files_changed} reformatted, {files_unchanged} unchanged, {files_error} errors ({total} total)"
-        )
+        if args.verbose:
+            total = files_changed + files_unchanged + files_error
+            summary_parts = []
+            if files_changed:
+                summary_parts.append(f"{files_changed} reformatted")
+            if files_unchanged:
+                summary_parts.append(f"{files_unchanged} unchanged")
+            if files_error:
+                summary_parts.append(f"{files_error} errors")
+            if not summary_parts:
+                summary_parts.append("0 files processed")
+            print(f"Summary: {', '.join(summary_parts)} ({total} total)")
+        for msg in error_messages:
+            print(f"  Error: {msg}", file=sys.stderr)
 
     return exit_code
 
