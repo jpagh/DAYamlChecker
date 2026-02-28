@@ -134,8 +134,8 @@ def test_cli_jinja_file_default_mode_prints_ok_status():
         assert "interview.yml" in output
 
 
-def test_cli_file_with_errors_still_exits_zero():
-    """process_file returns 'error' but main() currently always returns 0."""
+def test_cli_file_with_errors_reports_error_status():
+    """process_file returns 'error' and prints an errors summary line."""
     with TemporaryDirectory() as tmp:
         bad = Path(tmp) / "bad.yml"
         bad.write_text("---\nnot_a_real_key: hello\n", encoding="utf-8")
@@ -144,6 +144,15 @@ def test_cli_file_with_errors_still_exits_zero():
             result = process_file(str(bad))
         assert result == "error"
         assert re.search(r"errors \(\d+\):.*bad\.yml", buf.getvalue())
+
+
+def test_cli_main_exits_nonzero_when_any_file_has_errors():
+    with TemporaryDirectory() as tmp:
+        bad = Path(tmp) / "bad.yml"
+        bad.write_text("---\nnot_a_real_key: hello\n", encoding="utf-8")
+
+        with patch("sys.argv", ["dayamlchecker", str(bad)]):
+            assert main() == 1
 
 
 def test_cli_jinja_file_with_bad_key_reports_errors():

@@ -29,10 +29,6 @@ from dayamlchecker._jinja import (
 # * is "gathered" a valid attr?
 # * handle "response"
 # * labels above fields?
-# [DONE] if "# use jinja" at top, process whole file with Jinja:
-#   https://docassemble.org/docs/interviews.html#jinja2
-#   Jinja files are pre-processed via preprocess_jinja() before checking,
-#   and the formatter skips Jinja-syntax code blocks while formatting the rest.
 
 
 __all__ = [
@@ -45,6 +41,28 @@ __all__ = [
 
 # Ensure that if there's a space in the str, it's between quotes.
 space_in_str = re.compile("^[^ ]*['\"].* .*['\"][^ ]*$")
+
+
+def _variable_candidates(var_expr: str) -> set[str]:
+    expr = var_expr.strip()
+    candidates = {expr}
+    if "." in expr:
+        parts = expr.split(".")
+        for i in range(len(parts), 0, -1):
+            candidates.add(".".join(parts[:i]))
+    expanded = set()
+    for candidate in candidates:
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        expanded.add(candidate)
+        # Accept both full indexed paths and their base paths, e.g.:
+        # children[i].parents["Other"] -> children[i].parents
+        while candidate.endswith("]") and "[" in candidate:
+            candidate = candidate[: candidate.rfind("[")].strip()
+            if candidate:
+                expanded.add(candidate)
+    return expanded
 
 
 class YAMLStr:
@@ -276,31 +294,10 @@ class JSShowIf:
     def _references_screen_variable(self, var_expr):
         if not isinstance(var_expr, str):
             return False
-        for candidate in self._variable_candidates(var_expr):
+        for candidate in _variable_candidates(var_expr):
             if candidate in self.screen_variables:
                 return True
         return False
-
-    def _variable_candidates(self, var_expr):
-        expr = var_expr.strip()
-        candidates = {expr}
-        if "." in expr:
-            parts = expr.split(".")
-            for i in range(len(parts), 0, -1):
-                candidates.add(".".join(parts[:i]))
-        expanded = set()
-        for candidate in candidates:
-            candidate = candidate.strip()
-            if not candidate:
-                continue
-            expanded.add(candidate)
-            # Accept both full indexed paths and their base paths, e.g.:
-            # children[i].parents["Other"] -> children[i].parents
-            while candidate.endswith("]") and "[" in candidate:
-                candidate = candidate[: candidate.rfind("[")].strip()
-                if candidate:
-                    expanded.add(candidate)
-        return expanded
 
 
 class ShowIf:
@@ -491,7 +488,7 @@ class DAFields:
         def references_screen_variable(var_expr):
             if not isinstance(var_expr, str):
                 return False
-            candidates = self._variable_candidates(var_expr)
+            candidates = _variable_candidates(var_expr)
             if any(candidate in screen_variables for candidate in candidates):
                 return True
             # In generic-object screens, x.<attr> often aliases another object path
@@ -578,27 +575,6 @@ class DAFields:
                     self._validate_python_modifier(
                         py_key, field_item[py_key], field_item, screen_variables
                     )
-
-    def _variable_candidates(self, var_expr):
-        expr = var_expr.strip()
-        candidates = {expr}
-        if "." in expr:
-            parts = expr.split(".")
-            for i in range(len(parts), 0, -1):
-                candidates.add(".".join(parts[:i]))
-        expanded = set()
-        for candidate in candidates:
-            candidate = candidate.strip()
-            if not candidate:
-                continue
-            expanded.add(candidate)
-            # Accept both full indexed paths and their base paths, e.g.:
-            # children[i].parents["Other"] -> children[i].parents
-            while candidate.endswith("]") and "[" in candidate:
-                candidate = candidate[: candidate.rfind("[")].strip()
-                if candidate:
-                    expanded.add(candidate)
-        return expanded
 
 
 # type notes what the value for that dictionary key is,
@@ -1225,7 +1201,6 @@ def _collect_yaml_files(
 
 def process_file(
     input_file,
-    minimal: bool = False,
     quiet: bool = False,
     display_path: str | None = None,
 ) -> str:
@@ -1233,11 +1208,8 @@ def process_file(
 
     Args:
         input_file: Path to the YAML file to check.
-        minimal: If True, use a compact output format. Successful files print
-            a single character ('.' for normal files or 'j' for Jinja files),
-            and errors trigger a brief summary followed by each error message.
         quiet: If True, suppress output for successful and skipped files.
-            Errors are still printed unless combined with other output handling.
+            Errors are still printed.
         display_path: Optional path string to use in output instead of the
             full ``input_file`` path (e.g. a relative path).
 
@@ -1257,8 +1229,8 @@ def process_file(
         "examples.yml",
     ]:
         if input_file.endswith(dumb_da_file):
-            if not minimal and not quiet:
-                print(f"skipped: {display_path or input_file}")
+            if not quiet:
+                print(f"""skipped: {display_path or input_file}""")
             return "skipped"
 
     with open(input_file, "r") as f:
@@ -1271,25 +1243,15 @@ def process_file(
     )
 
     if len(all_errors) == 0:
-        if minimal:
-            print("j" if is_jinja else ".", end="")
-        elif not quiet:
+        if not quiet:
             label = "ok (jinja)" if is_jinja else "ok"
-            print(f"{label}: {display_path or input_file}")
+            print(f"""{label}: {display_path or input_file}""")
         return "ok"
 
-    if minimal:
-        print()
-        print(
-            f"""Found {len(all_errors)} errors{" (in Jinja-preprocessed file)" if is_jinja else ""}:"""
-        )
-        for err in all_errors:
-            print(f"{err}")
-    else:
-        jinja_note = " (jinja)" if is_jinja else ""
-        print(f"errors ({len(all_errors)}){jinja_note}: {display_path or input_file}")
-        for err in all_errors:
-            print(f"  {err}")
+    jinja_note = " (jinja)" if is_jinja else ""
+    print(f"""errors ({len(all_errors)}){jinja_note}: {display_path or input_file}""")
+    for err in all_errors:
+        print(f"""  {err}""")
     return "error"
 
 
@@ -1311,14 +1273,7 @@ def main() -> int:
             "(.git*, .github*, sources)"
         ),
     )
-    output_group = parser.add_mutually_exclusive_group()
-    output_group.add_argument(
-        "-m",
-        "--minimal",
-        action="store_true",
-        help="Show compact dot/letter progress instead of per-file lines",
-    )
-    output_group.add_argument(
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -1357,7 +1312,6 @@ def main() -> int:
     for input_file in yaml_files:
         status = process_file(
             str(input_file),
-            minimal=args.minimal,
             quiet=args.quiet,
             display_path=str(_display(input_file)),
         )
@@ -1368,23 +1322,13 @@ def main() -> int:
         else:
             files_skipped += 1
 
-    if args.minimal:
-        print()  # terminate dot line
-
     if not args.quiet and not args.no_summary:
         total = files_ok + files_error + files_skipped
-        summary_parts = []
-        if files_ok:
-            summary_parts.append(f"""{files_ok} ok""")
-        if files_error:
-            summary_parts.append(f"""{files_error} errors""")
-        if files_skipped:
-            summary_parts.append(f"""{files_skipped} skipped""")
-        if not summary_parts:
-            summary_parts.append("0 files processed")
-        print(f"""Summary: {", ".join(summary_parts)} ({total} total)""")
+        print(
+            f"""Summary: {files_ok} ok, {files_error} errors, {files_skipped} skipped ({total} total)"""
+        )
 
-    return 0
+    return 1 if files_error > 0 else 0
 
 
 if __name__ == "__main__":
