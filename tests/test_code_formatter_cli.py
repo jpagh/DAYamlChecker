@@ -1,9 +1,10 @@
-import subprocess
-import sys
+import io
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from dayamlchecker.code_formatter import _collect_yaml_files
+from dayamlchecker.code_formatter import _collect_yaml_files, main
 
 
 def test_formatter_collect_yaml_files_default_ignores_common_directories():
@@ -50,12 +51,20 @@ def test_formatter_collect_yaml_files_can_disable_default_ignores():
         assert collected == sorted([visible, git_file, github_file, sources_file])
 
 
-def _run_formatter(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "dayamlchecker.code_formatter", *args],
-        capture_output=True,
-        text=True,
-    )
+class _RunResult:
+    def __init__(self, returncode: int, stdout: str, stderr: str) -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _run_formatter(*args: str) -> _RunResult:
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+    with patch("sys.argv", ["dayamlchecker.code_formatter", *args]):
+        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+            returncode = main()
+    return _RunResult(returncode, stdout_buf.getvalue(), stderr_buf.getvalue())
 
 
 def test_formatter_skips_jinja_file_with_message():
