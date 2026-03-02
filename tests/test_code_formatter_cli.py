@@ -185,8 +185,8 @@ def test_formatter_summary_shows_unchanged_for_already_formatted_jinja():
         assert "skipped (Jinja)" not in result.stdout
 
 
-def test_formatter_jinja_without_header_is_error():
-    """A file with Jinja syntax but no '# use jinja' header should be flagged as an error."""
+def test_formatter_jinja_without_header_is_processed_as_plain_yaml():
+    """A file with '{{ }}' and no header is handled through the normal YAML path."""
     with TemporaryDirectory() as tmp:
         bad_file = Path(tmp) / "interview.yml"
         original = "---\nquestion: Hello {{ user }}\n"
@@ -194,19 +194,23 @@ def test_formatter_jinja_without_header_is_error():
 
         result = _run_formatter(str(bad_file))
 
-        assert result.returncode == 1
-        assert "error" in result.stderr
-        assert "# use jinja" in result.stderr
+        assert result.returncode == 0
+        assert result.stderr.strip() == ""
+        assert "unchanged" in result.stdout
         assert bad_file.read_text(encoding="utf-8") == original
 
 
-def test_formatter_jinja_without_header_not_modified():
-    """A file incorrectly containing Jinja syntax must not be modified."""
+def test_formatter_jinja_without_header_with_code_block_is_formatted():
+    """Without the header, valid YAML still gets normal code formatting."""
     with TemporaryDirectory() as tmp:
         bad_file = Path(tmp) / "interview.yml"
         original = "---\nquestion: Hello {{ user }}\ncode: |\n  x=1\n"
         bad_file.write_text(original, encoding="utf-8")
 
-        _run_formatter(str(bad_file))
+        result = _run_formatter(str(bad_file))
 
-        assert bad_file.read_text(encoding="utf-8") == original
+        assert result.returncode == 0
+        assert "reformatted" in result.stdout
+        assert bad_file.read_text(encoding="utf-8") == (
+            "---\nquestion: Hello {{ user }}\ncode: |\n  x = 1\n"
+        )

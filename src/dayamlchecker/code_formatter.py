@@ -630,17 +630,6 @@ Examples:
         try:
             content = file_path.read_text(encoding="utf-8")
 
-            # Jinja files without the '# use jinja' header are an error.
-            # Files WITH the header are processed by format_yaml_string's
-            # _format_jinja_yaml_string path (only clean code blocks formatted).
-            if _contains_jinja_syntax(content) and not _has_jinja_header(content):
-                files_error += 1
-                exit_code = 1
-                _emit_error(
-                    f"""error: {_display(file_path)} (Jinja syntax without '# use jinja' header)"""
-                )
-                continue
-
             formatted, changed = format_yaml_string(content, config)
             if changed and not args.check:
                 file_path.write_text(formatted, encoding="utf-8")
