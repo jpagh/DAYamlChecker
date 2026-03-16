@@ -1608,6 +1608,7 @@ def _collect_yaml_files(
 
     return _formatter_collect(paths, include_default_ignores=include_default_ignores)
 
+
 def process_file(
     input_file,
     quiet: bool = False,
