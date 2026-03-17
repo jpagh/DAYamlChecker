@@ -6,8 +6,9 @@ import re
 import sys
 
 from typing import Any, Optional
-import yaml
-from yaml.loader import SafeLoader
+from ruamel.yaml import YAML as _RuamelYAML
+from ruamel.yaml.error import MarkedYAMLError as _RuamelMarkedYAMLError
+from ruamel.yaml.constructor import DuplicateKeyError as _RuamelDuplicateKeyError
 from mako.template import Template as MakoTemplate  # type: ignore[import-untyped]
 from mako.exceptions import (  # type: ignore[import-untyped]
     SyntaxException,
@@ -429,7 +430,6 @@ class DAFields:
         "disable if",
         "js enable if",
         "js disable if",
-        "__line__",
     }
 
     js_modifier_keys = ("js show if", "js hide if", "js enable if", "js disable if")
@@ -485,10 +485,7 @@ class DAFields:
         self._validate_field_modifiers(x)
 
     def _line_for(self, field_item, code_line=1):
-        field_line = 1
-        if isinstance(field_item, dict):
-            field_line = field_item.get("__line__", 1)
-        return field_line + max(code_line - 1, 0)
+        return _lc_line(field_item) + max(code_line - 1, 0)
 
     def _extract_field_name(self, field_item):
         if not isinstance(field_item, dict):
@@ -605,8 +602,8 @@ class DAFields:
         self.has_dynamic_fields_code = any(  # looking for any example in the field list. Note that there can be `code` and traditional non-code mixed in the same field list
             isinstance(field_item, dict)
             and "code" in field_item
-            and len(set(field_item.keys()) - {"code", "__line__"})
-            == 0  # "code" is the only key other than __line__, so this is a dynamic fields block
+            and len(set(field_item.keys()) - {"code"})
+            == 0  # "code" is the only key, so this is a dynamic fields block
             for field_item in fields_list
         )
         screen_variables = set()
@@ -1078,6 +1075,19 @@ def _normalize_expr(expr: str) -> str:
     return normalized.replace('"', "'")
 
 
+def _lc_line(obj: Any) -> int:
+    """Return a 1-indexed line number from a ruamel.yaml object's position metadata.
+
+    Falls back to 1 when no position data is available (e.g. plain dicts in tests).
+    """
+    lc = getattr(obj, "lc", None)
+    if lc is not None:
+        line = getattr(lc, "line", None)
+        if line is not None:
+            return line + 1
+    return 1
+
+
 def _contains_interview_order_marker(value: Any) -> bool:
     if isinstance(value, str):
         lowered = value.lower()
@@ -1238,7 +1248,7 @@ def _extract_conditional_fields_from_doc(
                 {
                     "field_var": field_var,
                     "guards": guards,
-                    "line_number": line_number + field_item.get("__line__", 1),
+                    "line_number": line_number + _lc_line(field_item),
                 }
             )
     return conditional_fields
@@ -1395,35 +1405,6 @@ def _max_screen_visibility_nesting_depth(doc: dict[str, Any]) -> int:
     return max((depth(var) for var in adjacency.keys()), default=0)
 
 
-class SafeLineLoader(SafeLoader):
-    """https://stackoverflow.com/questions/13319067/parsing-yaml-return-with-line-number"""
-
-    def construct_mapping(self, node, deep=False):
-        # Detect duplicate keys in the mapping node and raise a helpful
-        # MarkedYAMLError with the problem and line information. PyYAML
-        # otherwise allows duplicate keys and silently takes the last
-        # occurrence, which is not ideal for our linter.
-        seen_keys = set()
-        for key_node, _ in node.value:
-            # Only check scalar keys
-            if hasattr(key_node, "value"):
-                key = key_node.value
-                if key in seen_keys:
-                    # Raise YAML marked error so find_errors_from_string will
-                    # capture this as a parsing error tied to a specific line.
-                    raise yaml.error.MarkedYAMLError(
-                        context="""while constructing a mapping""",
-                        context_mark=node.start_mark,
-                        problem=f"""found duplicate key {key!r}""",
-                        problem_mark=key_node.start_mark,
-                    )
-                seen_keys.add(key)
-
-        mapping = super(SafeLineLoader, self).construct_mapping(node, deep=deep)
-        mapping["__line__"] = node.start_mark.line + 1
-        return mapping
-
-
 def find_errors_from_string(
     full_content: str, input_file: Optional[str] = None
 ) -> list[YAMLError]:
@@ -1465,27 +1446,57 @@ def find_errors_from_string(
     ]
     prior_conditional_fields: list[dict[str, Any]] = []
 
+    _yaml_loader = _RuamelYAML()
+    _yaml_loader.allow_duplicate_keys = False
+
     line_number = 1
     for source_code in document_match.split(full_content):
         lines_in_code = sum(source_line == "\n" for source_line in source_code)
         source_code = remove_trailing_dots.sub("", source_code)
         source_code = fix_tabs.sub("  ", source_code)
         try:
-            doc = yaml.load(source_code, SafeLineLoader)
+            doc = _yaml_loader.load(source_code)
         except Exception as errMess:
-            if isinstance(errMess, yaml.error.MarkedYAMLError):
+            if isinstance(errMess, _RuamelDuplicateKeyError):
+                # Extract just the key name from ruamel's verbose problem string:
+                # 'found duplicate key "foo" with value ... (original value: ...)'
+                key_match = re.match(
+                    r'found duplicate key "([^"]+)"', errMess.problem or ""
+                )
+                key_name = key_match.group(1) if key_match else "unknown"
+                dup_line = line_number
+                if errMess.problem_mark is not None:
+                    dup_line = line_number + errMess.problem_mark.line
+                all_errors.append(
+                    YAMLError(
+                        err_str=f"duplicate key '{key_name}'",
+                        line_number=dup_line,
+                        file_name=input_file,
+                        experimental=False,
+                    )
+                )
+            elif isinstance(errMess, _RuamelMarkedYAMLError):
                 if errMess.context_mark is not None:
                     errMess.context_mark.line += line_number - 1
                 if errMess.problem_mark is not None:
                     errMess.problem_mark.line += line_number - 1
-            all_errors.append(
-                YAMLError(
-                    err_str=str(errMess),
-                    line_number=line_number,
-                    file_name=input_file,
-                    experimental=False,
+                all_errors.append(
+                    YAMLError(
+                        err_str=str(errMess),
+                        line_number=line_number,
+                        file_name=input_file,
+                        experimental=False,
+                    )
                 )
-            )
+            else:
+                all_errors.append(
+                    YAMLError(
+                        err_str=str(errMess),
+                        line_number=line_number,
+                        file_name=input_file,
+                        experimental=False,
+                    )
+                )
             line_number += lines_in_code
             continue
 
@@ -1518,8 +1529,6 @@ def find_errors_from_string(
                 )
         weird_keys = []
         for attr in doc.keys():
-            if attr == "__line__":
-                continue
             if not isinstance(attr, str):
                 # Non-string keys (e.g., bools) are not expected in DA interview files
                 weird_keys.append(str(attr))
@@ -1541,7 +1550,7 @@ def find_errors_from_string(
                     all_errors.append(
                         YAMLError(
                             err_str=f"""{err[0]}""",
-                            line_number=err[1] + doc["__line__"] + line_number,
+                            line_number=err[1] + _lc_line(doc) + line_number,
                             file_name=input_file,
                         )
                     )
@@ -1556,7 +1565,7 @@ def find_errors_from_string(
                         f'interview-order style block references "{field_var}" without a matching guard '
                         f"for that field's show/hide logic; this can cause the interview to get stuck"
                     ),
-                    line_number=doc["__line__"] + line_number + ref_line,
+                    line_number=_lc_line(doc) + line_number + ref_line,
                     file_name=input_file,
                 )
             )
@@ -1569,7 +1578,7 @@ def find_errors_from_string(
                         f"Warning: show if/hide if visibility logic is nested {nesting_depth} levels "
                         "on this screen (more than 2)"
                     ),
-                    line_number=doc["__line__"] + line_number,
+                    line_number=_lc_line(doc) + line_number,
                     file_name=input_file,
                 )
             )
