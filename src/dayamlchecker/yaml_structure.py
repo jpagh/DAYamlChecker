@@ -1436,9 +1436,13 @@ def find_errors_from_string(
                 for e in render_errors
             ]
         # Strip the '# use jinja' header from the rendered output so the
-        # recursive call does not re-enter this branch.
+        # recursive call does not re-enter this branch.  Add 1 to every
+        # returned line number to compensate for the removed header line.
         _, _sep, rendered_body = rendered.partition("\n")
-        return find_errors_from_string(rendered_body, input_file=input_file)
+        errors = find_errors_from_string(rendered_body, input_file=input_file)
+        for err in errors:
+            err.line_number += 1
+        return errors
 
     exclusive_keys = [
         key

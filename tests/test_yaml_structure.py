@@ -958,6 +958,25 @@ class TestJinjaHandling(unittest.TestCase):
         errs = find_errors_from_string(content, input_file="<jinja_bad_structure>")
         self.assertGreater(len(errs), 0)
 
+    def test_jinja_error_line_numbers_account_for_header(self):
+        """Line numbers in errors should reflect the original file, including
+        the '# use jinja' header on line 1."""
+        # The structure error is on line 3 of the original file, but the
+        # block-level error ("No possible types found") is attributed to the
+        # document separator on line 2 — consistent with how non-jinja files
+        # report block errors at the '---' line.
+        content = "# use jinja\n---\nnot_a_real_key: hello\n"
+        errs = find_errors_from_string(content, input_file="<jinja_lines>")
+        self.assertGreater(len(errs), 0)
+        # Without the offset fix the error would report line 1 (the stripped
+        # header).  With the fix it should be >= 2 (the '---' separator).
+        for err in errs:
+            self.assertGreaterEqual(
+                err.line_number,
+                2,
+                f"Expected line >= 2 for error after header, got {err.line_number}",
+            )
+
 
 class TestPreprocessJinja(unittest.TestCase):
     """Unit tests for the preprocess_jinja() function itself."""
