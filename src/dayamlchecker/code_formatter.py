@@ -309,14 +309,23 @@ def _collect_text_replacements_for_doc(
     return replacements
 
 
-# Regex that matches the header line of a block scalar for a Python code key.
-# Captures: (leading_whitespace, key_name, block_style)
-# Examples:
-#   "code: |"  "  validation code: >"  "code: |-"
-_CODE_KEY_RE = re.compile(
-    r"^([ \t]*)(code|validation code):\s*[|>]",
-    re.MULTILINE,
-)
+def _code_key_re(python_keys: set[str]) -> re.Pattern[str]:
+    """Build a regex matching block-scalar header lines for the given keys.
+
+    Examples of matched lines::
+
+        code: |
+        validation code: >
+        code: |-
+    """
+    # Sort longest-first so that "validation code" is attempted before "code".
+    alternatives = "|".join(
+        re.escape(k) for k in sorted(python_keys, key=len, reverse=True)
+    )
+    return re.compile(
+        rf"^([ \t]*)({alternatives}):\s*[|>]",
+        re.MULTILINE,
+    )
 
 
 def _format_jinja_yaml_string(
@@ -343,9 +352,10 @@ def _format_jinja_yaml_string(
     """
     lines = yaml_content.splitlines(keepends=True)
     replacements: list[tuple[int, int, str]] = []
+    pattern = _code_key_re(config.python_keys)
 
     for line_idx, line in enumerate(lines):
-        if not _CODE_KEY_RE.match(line):
+        if not pattern.match(line):
             continue
 
         body_start, body_end, _body_indent = _find_block_body_span(lines, line_idx)
@@ -625,7 +635,7 @@ Examples:
         if not file_path.exists():
             files_error += 1
             exit_code = 1
-            _emit_error(f"""error: {_display(file_path)} (file not found)""")
+            _emit_error(f"error: {_display(file_path)} (file not found)")
             continue
 
         try:
@@ -638,24 +648,24 @@ Examples:
             if changed:
                 files_changed += 1
                 if args.check:
-                    print(f"""Would reformat: {_display(file_path)}""")
+                    print(f"Would reformat: {_display(file_path)}")
                     exit_code = 1
                 elif not args.quiet:
-                    print(f"""reformatted: {_display(file_path)}""")
+                    print(f"reformatted: {_display(file_path)}")
             else:
                 files_unchanged += 1
                 if not args.check and not args.quiet:
-                    print(f"""unchanged: {_display(file_path)}""")
+                    print(f"unchanged: {_display(file_path)}")
 
         except Exception as e:
             files_error += 1
             exit_code = 1
-            _emit_error(f"""error: {_display(file_path)}: {e}""")
+            _emit_error(f"error: {_display(file_path)}: {e}")
 
     if not args.check and not args.quiet and not args.no_summary:
         total = files_changed + files_unchanged + files_error
         print(
-            f"""Summary: {files_changed} reformatted, {files_unchanged} unchanged, {files_error} errors ({total} total)"""
+            f"Summary: {files_changed} reformatted, {files_unchanged} unchanged, {files_error} errors ({total} total)"
         )
 
     return exit_code

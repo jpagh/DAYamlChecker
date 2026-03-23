@@ -12,28 +12,14 @@ Reference: https://docassemble.org/docs/interviews.html#jinja2
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
 
 import jinja2
 
-if TYPE_CHECKING:
-    pass
-
 __all__ = [
-    "JinjaWithoutHeaderError",
     "_contains_jinja_syntax",
     "_has_jinja_header",
     "preprocess_jinja",
 ]
-
-
-class JinjaWithoutHeaderError(Exception):
-    """Raised when a YAML file contains Jinja syntax but lacks the '# use jinja' header.
-
-    Per docassemble documentation, Jinja2 processing must be explicitly enabled by
-    placing ``# use jinja`` as the very first line of the file.  A file that contains
-    Jinja constructs without that header is considered invalid.
-    """
 
 
 _JINJA_SYNTAX_RE = re.compile(

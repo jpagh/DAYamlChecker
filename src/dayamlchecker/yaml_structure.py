@@ -4,7 +4,7 @@ import ast
 import re
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import esprima  # type: ignore[import-untyped]
 from mako.exceptions import (  # type: ignore[import-untyped]
@@ -89,7 +89,7 @@ class YAMLStr:
     def __init__(self, x):
         self.errors = []
         if not isinstance(x, str):
-            self.errors = [(f"""{x} isn't a string""", 1)]
+            self.errors = [(f"{x} isn't a string", 1)]
 
 
 class MakoText:
@@ -126,7 +126,7 @@ class PythonText:
         self.errors = []
         if not isinstance(x, str):
             self.errors = [
-                (f"""code block must be a YAML string, is {type(x).__name__}""", 1)
+                (f"code block must be a YAML string, is {type(x).__name__}", 1)
             ]
             return
         try:
@@ -135,7 +135,7 @@ class PythonText:
             # ex.lineno gives line number within the code block
             lineno = ex.lineno or 1
             msg = ex.msg or str(ex)
-            self.errors = [(f"""Python syntax error: {msg}""", lineno)]
+            self.errors = [(f"Python syntax error: {msg}", lineno)]
 
 
 class ValidationCode(PythonText):
@@ -229,7 +229,7 @@ class JSShowIf:
         self.screen_variables = screen_variables or set()
         if not isinstance(x, str):
             self.errors = [
-                (f"""{modifier_key} must be a string, is {type(x).__name__}""", 1)
+                (f"{modifier_key} must be a string, is {type(x).__name__}", 1)
             ]
             return
 
@@ -243,7 +243,7 @@ class JSShowIf:
         except esprima.Error as ex:
             self.errors.append(
                 (
-                    f"""Invalid JavaScript syntax in {modifier_key}: {ex}""",
+                    f"Invalid JavaScript syntax in {modifier_key}: {ex}",
                     getattr(ex, "lineNumber", 1) or 1,
                 )
             )
@@ -269,7 +269,7 @@ class JSShowIf:
         if not val_calls:
             self.errors.append(
                 (
-                    f"""{modifier_key} must contain at least one val() call to reference an on-screen field""",
+                    f"{modifier_key} must contain at least one val() call to reference an on-screen field",
                     1,
                 )
             )
@@ -368,7 +368,7 @@ class ShowIf:
                         msg = ex.msg or str(ex)
                         self.errors.append(
                             (
-                                f"""show if: code has Python syntax error: {msg}""",
+                                f"show if: code has Python syntax error: {msg}",
                                 lineno,
                             )
                         )
@@ -387,9 +387,9 @@ class DAPythonVar:
     def __init__(self, x):
         self.errors = []
         if not isinstance(x, str):
-            self.errors = [(f"""The python var needs to be a YAML string, is {x}""", 1)]
+            self.errors = [(f"The python var needs to be a YAML string, is {x}", 1)]
         elif " " in x and not space_in_str.search(x):
-            self.errors = [(f"""The python var cannot have whitespace (is {x})""", 1)]
+            self.errors = [(f"The python var cannot have whitespace (is {x})", 1)]
 
 
 class DAType:
@@ -405,11 +405,11 @@ class ObjectsAttrType:
         # The full typing desc of the var: TODO: how to use this?
         self.errors = []
         if not (isinstance(x, list) or isinstance(x, dict)):
-            self.errors = [f"""Objects block needs to be a list or a dict, is {x}"""]
+            self.errors = [f"Objects block needs to be a list or a dict, is {x}"]
         # for entry in x:
         #   ...
         # if not isinstance(x, Union[list[dict[DAPythonVar, DAType]], dict[DAPythonVar, DAType]]):
-        #  self.errors = [(f"""Not objectAttrType isinstance! {x}""", 1)]
+        #  self.errors = [(f"Not objectAttrType isinstance! {x}", 1)]
 
 
 class DAFields:
@@ -467,7 +467,7 @@ class DAFields:
                 if not isinstance(x.get("code"), str):
                     self.errors = [
                         (
-                            f"""fields: code must be a YAML string, is {type(x.get("code")).__name__}""",
+                            f"fields: code must be a YAML string, is {type(x.get("code")).__name__}",
                             1,
                         )
                     ]
@@ -481,7 +481,7 @@ class DAFields:
             self.errors = [(f'fields dict must have "code" key, is {x}', 1)]
             return
         if not isinstance(x, list):
-            self.errors = [(f"""fields should be a list or dict, is {x}""", 1)]
+            self.errors = [(f"fields should be a list or dict, is {x}", 1)]
             return
         self._validate_field_modifiers(x)
 
@@ -529,14 +529,14 @@ class DAFields:
                 if not isinstance(ref_var, str):
                     self.errors.append(
                         (
-                            f"""{modifier_key}: variable must be a string, got {type(ref_var).__name__}""",
+                            f"{modifier_key}: variable must be a string, got {type(ref_var).__name__}",
                             self._line_for(field_item),
                         )
                     )
                 elif not references_screen_variable(ref_var):
                     self.errors.append(
                         (
-                            f"""{modifier_key}: variable: {ref_var} is not defined on this screen. Use {modifier_key}: {{ code: ... }} instead for variables from previous screens""",
+                            f"{modifier_key}: variable: {ref_var} is not defined on this screen. Use {modifier_key}: {{ code: ... }} instead for variables from previous screens",
                             self._line_for(field_item),
                         )
                     )
@@ -546,7 +546,7 @@ class DAFields:
                 for err in validator.errors:
                     self.errors.append(
                         (
-                            f"""{modifier_key}: code has {err[0].lower()}""",
+                            f"{modifier_key}: code has {err[0].lower()}",
                             self._line_for(field_item, err[1]),
                         )
                     )
@@ -577,7 +577,7 @@ class DAFields:
             if not references_screen_variable(modifier_value):
                 self.errors.append(
                     (
-                        f"""{modifier_key}: {modifier_value} is not defined on this screen. Use {modifier_key}: {{ code: ... }} instead for variables from previous screens""",
+                        f"{modifier_key}: {modifier_value} is not defined on this screen. Use {modifier_key}: {{ code: ... }} instead for variables from previous screens",
                         self._line_for(field_item),
                     )
                 )
@@ -1067,8 +1067,8 @@ class YAMLError:
 
     def __str__(self):
         if not self.experimental:
-            return f"""REAL ERROR: At {self.file_name}:{self.line_number}: {self.err_str}"""
-        return f"""At {self.file_name}:{self.line_number}: {self.err_str}"""
+            return f"REAL ERROR: At {self.file_name}:{self.line_number}: {self.err_str}"
+        return f"At {self.file_name}:{self.line_number}: {self.err_str}"
 
 
 def _normalize_expr(expr: str) -> str:
@@ -1513,7 +1513,7 @@ def find_errors_from_string(
         if len(any_types) == 0:
             all_errors.append(
                 YAMLError(
-                    err_str=f"""No possible types found: {doc}""",
+                    err_str=f"No possible types found: {doc}",
                     line_number=line_number,
                     file_name=input_file,
                 )
@@ -1527,7 +1527,7 @@ def find_errors_from_string(
             else:
                 all_errors.append(
                     YAMLError(
-                        err_str=f"""Too many types this block could be: {posb_types}""",
+                        err_str=f"Too many types this block could be: {posb_types}",
                         line_number=line_number,
                         file_name=input_file,
                     )
@@ -1542,7 +1542,7 @@ def find_errors_from_string(
         if len(weird_keys) > 0:
             all_errors.append(
                 YAMLError(
-                    err_str=f"""Keys that shouldn't exist! {weird_keys}""",
+                    err_str=f"Keys that shouldn't exist! {weird_keys}",
                     line_number=line_number,
                     file_name=input_file,
                     experimental=False,
@@ -1554,7 +1554,7 @@ def find_errors_from_string(
                 for err in test.errors:
                     all_errors.append(
                         YAMLError(
-                            err_str=f"""{err[0]}""",
+                            err_str=f"{err[0]}",
                             line_number=err[1] + _lc_line(doc) + line_number,
                             file_name=input_file,
                         )
@@ -1599,9 +1599,9 @@ def find_errors_from_string(
 def find_errors(input_file: str) -> list[YAMLError]:
     """Return list of YAMLError found in the given input_file
 
-    If the file starts with the '# use jinja' header it is skipped and an empty
-    list is returned.  If Jinja syntax is detected *without* that header a
-    YAMLError is returned explaining the problem.
+    If the file starts with the ``# use jinja`` header, the content is
+    pre-processed through Jinja2 (with undefined variables rendered as empty
+    strings) and the rendered output is then validated as normal YAML.
 
     Args:
         input_file (str): Path to the YAML file to check.
@@ -1627,7 +1627,7 @@ def process_file(
     input_file,
     quiet: bool = False,
     display_path: str | None = None,
-) -> str:
+) -> Literal["ok", "error", "skipped"]:
     """Process a single file and report its validation status.
 
     Args:
@@ -1654,7 +1654,7 @@ def process_file(
     ]:
         if input_file.endswith(dumb_da_file):
             if not quiet:
-                print(f"""skipped: {display_path or input_file}""")
+                print(f"skipped: {display_path or input_file}")
             return "skipped"
 
     with open(input_file, "r") as f:
@@ -1669,13 +1669,13 @@ def process_file(
     if len(all_errors) == 0:
         if not quiet:
             label = "ok (jinja)" if is_jinja else "ok"
-            print(f"""{label}: {display_path or input_file}""")
+            print(f"{label}: {display_path or input_file}")
         return "ok"
 
     jinja_note = " (jinja)" if is_jinja else ""
-    print(f"""errors ({len(all_errors)}){jinja_note}: {display_path or input_file}""")
+    print(f"errors ({len(all_errors)}){jinja_note}: {display_path or input_file}")
     for err in all_errors:
-        print(f"""  {err}""")
+        print(f"  {err}")
     return "error"
 
 
@@ -1749,7 +1749,7 @@ def main() -> int:
     if not args.quiet and not args.no_summary:
         total = files_ok + files_error + files_skipped
         print(
-            f"""Summary: {files_ok} ok, {files_error} errors, {files_skipped} skipped ({total} total)"""
+            f"Summary: {files_ok} ok, {files_error} errors, {files_skipped} skipped ({total} total)"
         )
 
     return 1 if files_error > 0 else 0
