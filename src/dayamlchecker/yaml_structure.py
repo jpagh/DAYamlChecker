@@ -1,20 +1,21 @@
 # Each doc, apply this to each block
-import ast
 import argparse
-from pathlib import Path
+import ast
 import re
 import sys
-
+from pathlib import Path
 from typing import Any, Optional
-from ruamel.yaml import YAML as _RuamelYAML
-from ruamel.yaml.error import MarkedYAMLError as _RuamelMarkedYAMLError
-from ruamel.yaml.constructor import DuplicateKeyError as _RuamelDuplicateKeyError
-from mako.template import Template as MakoTemplate  # type: ignore[import-untyped]
-from mako.exceptions import (  # type: ignore[import-untyped]
-    SyntaxException,
-    CompileException,
-)
+
 import esprima  # type: ignore[import-untyped]
+from mako.exceptions import (  # type: ignore[import-untyped]
+    CompileException,
+    SyntaxException,
+)
+from mako.template import Template as MakoTemplate  # type: ignore[import-untyped]
+from ruamel.yaml import YAML as _RuamelYAML
+from ruamel.yaml.constructor import DuplicateKeyError as _RuamelDuplicateKeyError
+from ruamel.yaml.error import MarkedYAMLError as _RuamelMarkedYAMLError
+
 from dayamlchecker._jinja import (
     _has_jinja_header,
     preprocess_jinja,

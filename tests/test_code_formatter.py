@@ -1,15 +1,16 @@
 import unittest
 from pathlib import Path
-from dayamlchecker.code_formatter import (
-    format_python_code,
-    format_yaml_string,
-    FormatterConfig,
-    _convert_indent_4_to_2,
-    _strip_common_indent,
-)
+
 from dayamlchecker._jinja import (
     _contains_jinja_syntax,
     _has_jinja_header,
+)
+from dayamlchecker.code_formatter import (
+    FormatterConfig,
+    _convert_indent_4_to_2,
+    _strip_common_indent,
+    format_python_code,
+    format_yaml_string,
 )
 
 
@@ -463,8 +464,9 @@ class TestFormatYamlFile(unittest.TestCase):
     """Tests for format_yaml_file()."""
 
     def test_format_writes_and_returns_changes(self):
-        import tempfile
         import os
+        import tempfile
+
         from dayamlchecker.code_formatter import format_yaml_file
 
         content = "---\ncode: |\n  x=1\n"
@@ -483,8 +485,9 @@ class TestFormatYamlFile(unittest.TestCase):
             os.unlink(fname)
 
     def test_format_no_write_does_not_modify_file(self):
-        import tempfile
         import os
+        import tempfile
+
         from dayamlchecker.code_formatter import format_yaml_file
 
         content = "---\ncode: |\n  x=1\n"
@@ -502,8 +505,9 @@ class TestFormatYamlFile(unittest.TestCase):
             os.unlink(fname)
 
     def test_format_unchanged_file_returns_false(self):
-        import tempfile
         import os
+        import tempfile
+
         from dayamlchecker.code_formatter import format_yaml_file
 
         content = "---\ncode: |\n  x = 1\n"
@@ -524,6 +528,7 @@ class TestCollectYamlFiles(unittest.TestCase):
 
     def test_check_all_flag_disables_ignores(self):
         import tempfile
+
         from dayamlchecker.code_formatter import _collect_yaml_files
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -541,6 +546,7 @@ class TestCollectYamlFiles(unittest.TestCase):
 
     def test_venv_dir_is_ignored_by_default(self):
         import tempfile
+
         from dayamlchecker.code_formatter import _collect_yaml_files
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -556,8 +562,9 @@ class TestCollectYamlFiles(unittest.TestCase):
             self.assertNotIn("env.yml", names)
 
     def test_single_yaml_file_path_collected(self):
-        import tempfile
         import os
+        import tempfile
+
         from dayamlchecker.code_formatter import _collect_yaml_files
 
         with tempfile.NamedTemporaryFile(
@@ -572,8 +579,9 @@ class TestCollectYamlFiles(unittest.TestCase):
             os.unlink(fname)
 
     def test_non_yaml_file_not_collected(self):
-        import tempfile
         import os
+        import tempfile
+
         from dayamlchecker.code_formatter import _collect_yaml_files
 
         with tempfile.NamedTemporaryFile(

@@ -1,8 +1,10 @@
 import unittest
 from unittest.mock import patch
+
 import jinja2
+
+from dayamlchecker._jinja import _SilentUndefined, preprocess_jinja
 from dayamlchecker.yaml_structure import find_errors_from_string
-from dayamlchecker._jinja import preprocess_jinja, _SilentUndefined
 
 
 class TestYAMLStructure(unittest.TestCase):
@@ -1343,6 +1345,7 @@ class TestFindErrors(unittest.TestCase):
 
     def test_find_errors_valid_file(self):
         import tempfile
+
         from dayamlchecker.yaml_structure import find_errors
 
         content = "---\nquestion: Hello\nfield: my_var\n"
@@ -1361,6 +1364,7 @@ class TestFindErrors(unittest.TestCase):
 
     def test_find_errors_invalid_file(self):
         import tempfile
+
         from dayamlchecker.yaml_structure import find_errors
 
         content = "---\nnot_a_real_key: hello\n"
@@ -1440,6 +1444,7 @@ class TestProcessFile(unittest.TestCase):
 
     def test_process_valid_file_prints_ok(self):
         import io
+
         from dayamlchecker.yaml_structure import process_file
 
         path = self._write_temp("---\nquestion: Hello\nfield: my_var\n")
@@ -1455,6 +1460,7 @@ class TestProcessFile(unittest.TestCase):
 
     def test_process_jinja_file_prints_ok_jinja(self):
         import io
+
         from dayamlchecker.yaml_structure import process_file
 
         path = self._write_temp("# use jinja\n---\nquestion: Hello {{ name }}\n")
@@ -1470,6 +1476,7 @@ class TestProcessFile(unittest.TestCase):
 
     def test_process_file_with_errors_prints_error_count(self):
         import io
+
         from dayamlchecker.yaml_structure import process_file
 
         path = self._write_temp("---\nbad_key: hello\n")
@@ -1486,6 +1493,7 @@ class TestProcessFile(unittest.TestCase):
     def test_process_ignored_da_filename_skipped(self):
         """Files whose basename is in the DA ignore list are silently skipped."""
         import io
+
         from dayamlchecker.yaml_structure import process_file
 
         # Write a file with a bad-key error but with an ignored name
@@ -1509,6 +1517,7 @@ class TestProcessFile(unittest.TestCase):
     def test_process_jinja_file_default_mode_prints_ok_status(self):
         """Default mode prints the file name and ok (jinja) status per-file."""
         import io
+
         from dayamlchecker.yaml_structure import process_file
 
         path = self._write_temp("# use jinja\n---\nquestion: Hello {{ name }}\n")

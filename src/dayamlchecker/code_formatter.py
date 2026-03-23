@@ -26,6 +26,7 @@ from typing import Any
 import black
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
+
 from dayamlchecker._jinja import (
     _contains_jinja_syntax,
     _has_jinja_header,
