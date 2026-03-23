@@ -27,6 +27,11 @@ dayamlchecker = ["py.typed"]
 requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
 [project.scripts]
 dayamlchecker = "dayamlchecker.yaml_structure:main"
 dayamlchecker-fmt = "dayamlchecker.code_formatter:main"
