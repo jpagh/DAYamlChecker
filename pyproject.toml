@@ -34,6 +34,7 @@ dev = [
 ]
 
 [project.scripts]
+dayaml = "dayamlchecker.cli:main"
 dayamlchecker = "dayamlchecker.yaml_structure:main"
 dayamlchecker-fmt = "dayamlchecker.code_formatter:main"
 

@@ -490,7 +490,7 @@ def format_yaml_file(
     return formatted, changed
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Format Python code blocks in docassemble YAML files",
@@ -547,7 +547,7 @@ Examples:
         help="Do not print the summary line after processing",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     config = FormatterConfig(
         black_line_length=args.line_length,

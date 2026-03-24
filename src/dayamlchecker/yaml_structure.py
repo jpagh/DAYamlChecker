@@ -1671,7 +1671,7 @@ def process_file(
     return "error"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate Docassemble YAML files",
     )
@@ -1700,7 +1700,7 @@ def main() -> int:
         action="store_true",
         help="Do not print the summary line after processing",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Precompute resolved base dirs for relative path display
     base_dirs = [p.resolve() if p.is_dir() else p.resolve().parent for p in args.files]
