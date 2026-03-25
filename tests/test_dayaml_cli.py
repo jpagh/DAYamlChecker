@@ -3,26 +3,20 @@ import os
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from dataclasses import dataclass
+
+from tests._cli_helpers import RunResult
 
 from dayamlchecker.cli import main
+from dayamlchecker.__main__ import main as package_main
+from dayamlchecker.yaml_structure import main as checker_main
 
 
-@dataclass
-class _RunResult:
-    """Private helper capturing CLI invocation results for this test module."""
-
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-def _run_dayaml(*args: str) -> _RunResult:
+def _run_dayaml(*args: str) -> RunResult:
     stdout_buf = io.StringIO()
     stderr_buf = io.StringIO()
     with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
         returncode = main(list(args))
-    return _RunResult(returncode, stdout_buf.getvalue(), stderr_buf.getvalue())
+    return RunResult(returncode, stdout_buf.getvalue(), stderr_buf.getvalue())
 
 
 def test_dayaml_check_dispatches_to_checker_cli():
@@ -132,3 +126,8 @@ def test_dayaml_format_check_flag_does_not_write():
         assert result.returncode != 0
         assert "Would reformat" in result.stdout
         assert interview.read_text(encoding="utf-8") == original
+
+
+def test_package_main_aliases_yaml_structure_main():
+    """The package entrypoint should directly expose the checker CLI main."""
+    assert package_main is checker_main

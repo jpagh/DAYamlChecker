@@ -12,14 +12,26 @@ Reference: https://docassemble.org/docs/interviews.html#jinja2
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 import jinja2
+
+from dayamlchecker.messages import MessageCode
 
 __all__ = [
     "_contains_jinja_syntax",
     "_has_jinja_header",
     "preprocess_jinja",
+    "JinjaError",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class JinjaError:
+    """Structured error returned by :func:`preprocess_jinja`."""
+
+    code: str
+    message: str
 
 
 _JINJA_SYNTAX_RE = re.compile(
@@ -89,7 +101,7 @@ class _SilentUndefined(jinja2.Undefined):
         return _SilentUndefined()
 
 
-def preprocess_jinja(content: str) -> tuple[str, list[str]]:
+def preprocess_jinja(content: str) -> tuple[str, list[JinjaError]]:
     """Render *content* as a Jinja2 template and return ``(rendered, errors)``.
 
     Uses :class:`_SilentUndefined` so that template variables unavailable at
@@ -105,8 +117,8 @@ def preprocess_jinja(content: str) -> tuple[str, list[str]]:
         content: Raw file content, including the ``# use jinja`` header.
 
     Returns:
-        Tuple of ``(rendered_text, error_messages)``.  A non-empty
-        *error_messages* list means the template had render errors.
+        Tuple of ``(rendered_text, errors)``.  A non-empty
+        *errors* list means the template had render errors.
     """
     env = jinja2.Environment(
         undefined=_SilentUndefined,
@@ -116,11 +128,21 @@ def preprocess_jinja(content: str) -> tuple[str, list[str]]:
     try:
         template = env.from_string(content)
     except jinja2.exceptions.TemplateSyntaxError as ex:
-        return content, [f"Jinja2 syntax error at line {ex.lineno}: {ex.message}"]
+        return content, [
+            JinjaError(
+                code=MessageCode.JINJA2_SYNTAX_ERROR,
+                message=f"Jinja2 syntax error at line {ex.lineno}: {ex.message}",
+            )
+        ]
 
     try:
         rendered = template.render()
     except jinja2.exceptions.TemplateError as ex:
-        return content, [f"Jinja2 template error: {ex}"]
+        return content, [
+            JinjaError(
+                code=MessageCode.JINJA2_TEMPLATE_ERROR,
+                message=f"Jinja2 template error: {ex}",
+            )
+        ]
 
     return rendered, []

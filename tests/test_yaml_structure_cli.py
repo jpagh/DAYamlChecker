@@ -1,12 +1,12 @@
 import io
 import re
-import runpy
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from dayamlchecker._files import _collect_yaml_files
+from dayamlchecker.__main__ import main as package_main
 from dayamlchecker.yaml_structure import main, process_file
 
 
@@ -144,7 +144,9 @@ def test_cli_file_with_errors_reports_error_status():
         with redirect_stdout(buf):
             result = process_file(str(bad))
         assert result == "error"
-        assert re.search(r"errors \(\d+\):.*bad\.yml", buf.getvalue())
+        output = buf.getvalue()
+        assert re.search(r"errors \(\d+\):.*bad\.yml", output)
+        assert "[E301]" in output
 
 
 def test_cli_main_exits_nonzero_when_any_file_has_errors():
@@ -172,7 +174,9 @@ def test_cli_jinja_file_with_bad_key_reports_errors():
         with redirect_stdout(buf):
             result = process_file(str(jinja_file))
         assert result == "error"
-        assert re.search(r"errors \(\d+\).*bad_jinja\.yml", buf.getvalue())
+        output = buf.getvalue()
+        assert re.search(r"errors \(\d+\).*bad_jinja\.yml", output)
+        assert "[E301]" in output
 
 
 def test_cli_process_file_skips_known_da_files():
@@ -253,6 +257,41 @@ def test_cli_main_summary_shows_counts():
         assert "1 ok" in output
 
 
+def test_cli_main_summary_counts_skipped_files():
+    with TemporaryDirectory() as tmp:
+        skipped = Path(tmp) / "good.yml"
+        skipped.write_text("---\nquestion: Hello\nfield: my_var\n", encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            with patch(
+                "dayamlchecker.yaml_structure.process_file", return_value="skipped"
+            ):
+                with patch("sys.argv", ["dayamlchecker", str(skipped)]):
+                    result = main()
+
+        assert result == 0
+        assert "1 skipped" in buf.getvalue()
+
+
+def test_cli_display_falls_back_to_absolute_path_when_not_under_base():
+    with TemporaryDirectory() as base_tmp, TemporaryDirectory() as other_tmp:
+        base = Path(base_tmp)
+        outside = Path(other_tmp) / "outside.yml"
+        outside.write_text("---\nquestion: Hello\nfield: my_var\n", encoding="utf-8")
+        buf = io.StringIO()
+
+        with redirect_stdout(buf):
+            with patch(
+                "dayamlchecker.yaml_structure._collect_yaml_files",
+                return_value=[outside],
+            ):
+                with patch("sys.argv", ["dayamlchecker", str(base)]):
+                    result = main()
+
+        assert result == 0
+        assert str(outside.resolve()) in buf.getvalue()
+
+
 def test_cli_display_path_used_in_output():
     """process_file uses display_path when provided."""
     with TemporaryDirectory() as tmp:
@@ -265,30 +304,50 @@ def test_cli_display_path_used_in_output():
         assert "custom/path.yml" in buf.getvalue()
 
 
-def test_main_module_invocation():
-    """__main__.py calls yaml_structure.main() via SystemExit."""
-    with TemporaryDirectory() as tmp:
-        good = Path(tmp) / "good.yml"
-        good.write_text("---\nquestion: Hello\nfield: my_var\n", encoding="utf-8")
-        with patch("sys.argv", ["dayamlchecker", str(good)]):
-            try:
-                runpy.run_module("dayamlchecker", run_name="__main__")
-            except SystemExit as exc:
-                assert exc.code == 0
-
-
-def test_main_module_invocation_failure_exit_code_non_zero():
-    """__main__.py propagates non-zero exit codes from yaml_structure.main()."""
+def test_cli_default_omits_real_error_prefix():
+    """process_file omits the REAL ERROR prefix by default on non-experimental errors."""
     with TemporaryDirectory() as tmp:
         bad = Path(tmp) / "bad.yml"
-        # Write intentionally invalid YAML to trigger a validation or parse error.
-        bad.write_text(":\n  - invalid", encoding="utf-8")
-        with patch("sys.argv", ["dayamlchecker", str(bad)]):
-            try:
-                runpy.run_module("dayamlchecker", run_name="__main__")
-            except SystemExit as exc:
-                assert exc.code != 0
-            else:
-                assert (
-                    False
-                ), "Expected SystemExit with non-zero exit code for invalid input"
+        bad.write_text("---\nnot_a_real_key: hello\n", encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            result = process_file(str(bad))
+        assert result == "error"
+        output = buf.getvalue()
+        assert "[E301]" in output
+        assert "REAL ERROR" not in output
+
+
+def test_cli_show_experimental_flag_via_main():
+    """--show-experimental adds the REAL ERROR prefix through the main() entry point."""
+    with TemporaryDirectory() as tmp:
+        bad = Path(tmp) / "bad.yml"
+        bad.write_text("---\nnot_a_real_key: hello\n", encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            with patch("sys.argv", ["dayamlchecker", "--show-experimental", str(bad)]):
+                main()
+        output = buf.getvalue()
+        assert "[E301]" in output
+        assert "REAL ERROR" in output
+
+
+def test_cli_no_show_experimental_flag_via_main():
+    """--no-show-experimental explicitly suppresses the REAL ERROR prefix."""
+    with TemporaryDirectory() as tmp:
+        bad = Path(tmp) / "bad.yml"
+        bad.write_text("---\nnot_a_real_key: hello\n", encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            with patch(
+                "sys.argv", ["dayamlchecker", "--no-show-experimental", str(bad)]
+            ):
+                main()
+        output = buf.getvalue()
+        assert "[E301]" in output
+        assert "REAL ERROR" not in output
+
+
+def test_package_main_aliases_yaml_structure_main():
+    """The package entrypoint should directly expose the checker CLI main."""
+    assert package_main is main

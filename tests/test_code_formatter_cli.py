@@ -4,6 +4,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from tests._cli_helpers import RunResult
+
 from dayamlchecker._files import _collect_yaml_files
 from dayamlchecker.code_formatter import main
 
@@ -52,20 +54,25 @@ def test_formatter_collect_yaml_files_can_disable_default_ignores():
         assert collected == sorted([visible, git_file, github_file, sources_file])
 
 
-class _RunResult:
-    def __init__(self, returncode: int, stdout: str, stderr: str) -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+def test_formatter_collect_yaml_files_skips_ignored_root_directory_itself():
+    with TemporaryDirectory() as tmp:
+        git_root = Path(tmp) / ".git"
+        git_root.mkdir()
+        hidden = git_root / "hidden.yml"
+        hidden.write_text("question: git\n", encoding="utf-8")
+
+        collected = _collect_yaml_files([git_root])
+
+        assert collected == []
 
 
-def _run_formatter(*args: str) -> _RunResult:
+def _run_formatter(*args: str) -> RunResult:
     stdout_buf = io.StringIO()
     stderr_buf = io.StringIO()
     with patch("sys.argv", ["dayamlchecker.code_formatter", *args]):
         with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
             returncode = main()
-    return _RunResult(returncode, stdout_buf.getvalue(), stderr_buf.getvalue())
+    return RunResult(returncode, stdout_buf.getvalue(), stderr_buf.getvalue())
 
 
 def test_formatter_skips_jinja_file_with_message():
@@ -172,6 +179,18 @@ def test_formatter_quiet_suppresses_output():
         assert result.stdout.strip() == ""
 
 
+def test_formatter_quiet_suppresses_reformatted_output_too():
+    with TemporaryDirectory() as tmp:
+        interview = Path(tmp) / "interview.yml"
+        interview.write_text("---\ncode: |\n  x=1\n", encoding="utf-8")
+
+        result = _run_formatter("--quiet", str(interview))
+
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+        assert interview.read_text(encoding="utf-8") == "---\ncode: |\n  x = 1\n"
+
+
 def test_formatter_summary_shows_unchanged_for_already_formatted_jinja():
     """A Jinja file with already-formatted code blocks appears as 'unchanged'."""
     with TemporaryDirectory() as tmp:
@@ -225,6 +244,21 @@ def test_formatter_no_yaml_files_found():
         result = _run_formatter(str(txt))
         assert result.returncode == 1
         assert "no yaml files found" in result.stderr.lower()
+
+
+def test_formatter_display_uses_absolute_path_for_file_outside_bases():
+    with TemporaryDirectory() as base_tmp, TemporaryDirectory() as other_tmp:
+        base = Path(base_tmp)
+        outside = Path(other_tmp) / "outside.yml"
+        outside.write_text("---\ncode: |\n  x = 1\n", encoding="utf-8")
+
+        with patch(
+            "dayamlchecker.code_formatter._collect_yaml_files", return_value=[outside]
+        ):
+            result = _run_formatter(str(base))
+
+        assert result.returncode == 0
+        assert str(outside.resolve()) in result.stdout
 
 
 def test_formatter_check_mode_does_not_write():

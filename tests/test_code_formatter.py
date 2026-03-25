@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from dayamlchecker._files import _collect_yaml_files
 from dayamlchecker._jinja import (
@@ -79,6 +80,17 @@ class TestFormatPythonCode(unittest.TestCase):
         result = format_python_code(code, config)
         # Nested should be 4 spaces (2 * 2) instead of 8 (4 * 2)
         self.assertIn("\n    x = 1", result)
+
+    def test_format_without_trailing_whitespace_strip_branch(self):
+        code = "x = 1\n"
+        config = FormatterConfig(strip_trailing_whitespace=False)
+
+        result = format_python_code(code, config)
+
+        self.assertEqual(result, "x = 1\n")
+
+    def test_format_blank_code_returns_empty_string(self):
+        self.assertEqual(format_python_code("\n"), "")
 
 
 class TestFormatYamlString(unittest.TestCase):
@@ -621,6 +633,15 @@ class TestFormatYamlStringEdgeCases(unittest.TestCase):
         result, _ = format_yaml_string(yaml_content)
         self.assertIn("x = 1", result)
 
+    def test_jinja_last_body_line_without_trailing_newline_stays_without_newline(self):
+        yaml_content = "# use jinja\n---\ncode: |\n  x=1"
+
+        result, changed = format_yaml_string(yaml_content)
+
+        self.assertTrue(changed)
+        self.assertTrue(result.endswith("x = 1"))
+        self.assertFalse(result.endswith("\n"))
+
     def test_format_with_custom_line_length(self):
         # A very short line length forces Black to break the line
         config = FormatterConfig(black_line_length=20)
@@ -662,6 +683,18 @@ class TestFormatYamlStringEdgeCases(unittest.TestCase):
         result, changed = format_yaml_string(yaml_content)
         self.assertFalse(changed)
 
+    def test_jinja_regex_path_formatter_exception_leaves_block_unchanged(self):
+        yaml_content = "# use jinja\n---\ncode: |\n  x=1\n"
+
+        with patch(
+            "dayamlchecker.code_formatter.format_python_code",
+            side_effect=ValueError("boom"),
+        ):
+            result, changed = format_yaml_string(yaml_content)
+
+        self.assertFalse(changed)
+        self.assertEqual(result, yaml_content)
+
     def test_collect_yaml_files_include_default_ignores_none(self):
         """_collect_yaml_files with include_default_ignores=None defaults to True."""
         import tempfile
@@ -680,6 +713,45 @@ class TestFormatYamlStringEdgeCases(unittest.TestCase):
             names = [p.name for p in result]
             self.assertIn("visible.yml", names)
             self.assertNotIn("hidden.yml", names)
+
+
+class TestCollectTextReplacements(unittest.TestCase):
+    def test_skip_replacement_when_location_lookup_fails(self):
+        from ruamel.yaml import YAML
+
+        from dayamlchecker.code_formatter import _collect_text_replacements_for_doc
+
+        yaml_content = "---\ncode: |\n  x=1\n"
+        yaml = YAML()
+        doc = yaml.load(yaml_content)
+        lines = yaml_content.splitlines(keepends=True)
+
+        with patch.object(doc.lc, "key", side_effect=RuntimeError("boom")):
+            replacements = _collect_text_replacements_for_doc(
+                doc, lines, FormatterConfig()
+            )
+
+        self.assertEqual(replacements, [])
+
+    def test_skip_replacement_when_code_is_already_formatted(self):
+        from ruamel.yaml import YAML
+
+        from dayamlchecker.code_formatter import _collect_text_replacements_for_doc
+
+        yaml_content = "---\ncode: |\n  x = 1\n"
+        yaml = YAML()
+        doc = yaml.load(yaml_content)
+        lines = yaml_content.splitlines(keepends=True)
+
+        with patch(
+            "dayamlchecker.code_formatter.format_python_code",
+            return_value=str(doc["code"]),
+        ):
+            replacements = _collect_text_replacements_for_doc(
+                doc, lines, FormatterConfig()
+            )
+
+        self.assertEqual(replacements, [])
 
 
 if __name__ == "__main__":

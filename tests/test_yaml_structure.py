@@ -1,12 +1,38 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import jinja2
 
-from dayamlchecker._jinja import _SilentUndefined, preprocess_jinja
+from dayamlchecker._jinja import JinjaError, _SilentUndefined, preprocess_jinja
+from dayamlchecker.messages import (
+    MESSAGE_DEFINITIONS,
+    MessageCode,
+    format_message,
+    is_experimental_code,
+)
 from dayamlchecker.yaml_structure import (
     _variable_candidates,
     find_errors_from_string,
+)
+
+MESSAGE_CODE_PATTERN = r"^[EWC]\d{3}$"
+LARGE_INVALID_INTERVIEW_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "large_invalid_interview.yml"
+)
+LARGE_INVALID_JINJA_SYNTAX_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "large_invalid_jinja_syntax.yml"
+)
+LARGE_INVALID_JINJA_TEMPLATE_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "large_invalid_jinja_template.yml"
+)
+LARGE_VALID_INTERVIEW_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "large_valid_interview.yml"
+)
+ALL_ERROR_CODE_FIXTURES = (
+    LARGE_INVALID_INTERVIEW_FIXTURE,
+    LARGE_INVALID_JINJA_SYNTAX_FIXTURE,
+    LARGE_INVALID_JINJA_TEMPLATE_FIXTURE,
 )
 
 
@@ -29,7 +55,11 @@ template: |
 """
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
-            any("Too many types this block could be" in e.err_str for e in errs),
+            any(
+                e.code == MessageCode.TOO_MANY_TYPES
+                and "Too many types this block could be" in e.err_str
+                for e in errs
+            ),
             f"Expected exclusivity error, got: {errs}",
         )
 
@@ -46,8 +76,11 @@ question: |
         )
         self.assertTrue(
             any(
-                "duplicate key" in e.err_str.lower()
-                or "found duplicate key" in e.err_str.lower()
+                e.code == MessageCode.YAML_DUPLICATE_KEY
+                and (
+                    "duplicate key" in e.err_str.lower()
+                    or "found duplicate key" in e.err_str.lower()
+                )
                 for e in errs
             ),
             f"Expected duplicate key error, got: {errs}",
@@ -143,7 +176,11 @@ fields:
 """
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
-            any("not defined on this screen" in e.err_str.lower() for e in errs),
+            any(
+                e.code == MessageCode.JS_UNKNOWN_SCREEN_FIELD
+                and "not defined on this screen" in e.err_str.lower()
+                for e in errs
+            ),
             f"Expected unknown field error, got: {errs}",
         )
 
@@ -166,7 +203,7 @@ fields:
         errs = find_errors_from_string(warning_yaml, input_file="<string_warn>")
         self.assertTrue(
             any(
-                e.err_str.lower().startswith("warning:")
+                e.code == MessageCode.JS_UNKNOWN_SCREEN_FIELD
                 and "unable to fully validate screen variables" in e.err_str.lower()
                 for e in errs
             ),
@@ -403,7 +440,11 @@ fields:
 """
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
-            any("not defined on this screen" in e.err_str.lower() for e in errs),
+            any(
+                e.code == MessageCode.FIELD_MODIFIER_UNKNOWN_VARIABLE_STRING
+                and "not defined on this screen" in e.err_str.lower()
+                for e in errs
+            ),
             f"Expected 'not defined on screen' error, got: {errs}",
         )
 
@@ -462,7 +503,11 @@ fields:
 """
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
-            any("not defined on this screen" in e.err_str.lower() for e in errs),
+            any(
+                e.code == MessageCode.FIELD_MODIFIER_UNKNOWN_VARIABLE_STRING
+                and "not defined on this screen" in e.err_str.lower()
+                for e in errs
+            ),
             f"Expected 'not defined on screen' error, got: {errs}",
         )
 
@@ -499,7 +544,8 @@ fields:
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
             any(
-                "enable if" in e.err_str.lower()
+                e.code == MessageCode.FIELD_MODIFIER_UNKNOWN_VARIABLE_STRING
+                and "enable if" in e.err_str.lower()
                 and "not defined on this screen" in e.err_str.lower()
                 for e in errs
             ),
@@ -518,7 +564,8 @@ fields:
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
             any(
-                "disable if" in e.err_str.lower()
+                e.code == MessageCode.FIELD_MODIFIER_UNKNOWN_VARIABLE_STRING
+                and "disable if" in e.err_str.lower()
                 and "not defined on this screen" in e.err_str.lower()
                 for e in errs
             ),
@@ -787,7 +834,11 @@ validation code: |
 """
         errs = find_errors_from_string(invalid, input_file="<string_invalid>")
         self.assertTrue(
-            any("does not call validation_error" in e.err_str.lower() for e in errs),
+            any(
+                e.code == MessageCode.VALIDATION_CODE_MISSING_VALIDATION_ERROR
+                and "does not call validation_error" in e.err_str.lower()
+                for e in errs
+            ),
             f"Expected missing validation_error warning, got: {errs}",
         )
 
@@ -1311,7 +1362,9 @@ class TestPreprocessJinja(unittest.TestCase):
         """A Jinja2 template syntax error is captured and returned, not raised."""
         _, errors = preprocess_jinja("# use jinja\n---\nquestion: {% if %}\n")
         self.assertGreater(len(errors), 0)
-        self.assertTrue(any("jinja2 syntax error" in e.lower() for e in errors))
+        self.assertIsInstance(errors[0], JinjaError)
+        self.assertEqual(errors[0].code, MessageCode.JINJA2_SYNTAX_ERROR)
+        self.assertIn("syntax error", errors[0].message.lower())
 
     def test_template_runtime_error_returns_error_list(self):
         """A TemplateError raised during render() is caught and returned, not raised."""
@@ -1324,7 +1377,9 @@ class TestPreprocessJinja(unittest.TestCase):
             rendered, errors = preprocess_jinja(content)
             self.assertEqual(rendered, content)
             self.assertEqual(len(errors), 1)
-            self.assertIn("Jinja2 template error", errors[0])
+            self.assertIsInstance(errors[0], JinjaError)
+            self.assertEqual(errors[0].code, MessageCode.JINJA2_TEMPLATE_ERROR)
+            self.assertIn("Jinja2 template error", errors[0].message)
 
     def test_for_loop_over_undefined_renders_empty(self):
         """Iterating over an undefined variable produces no output (covers __iter__)."""
@@ -1571,6 +1626,46 @@ class TestDAFields(unittest.TestCase):
         self.assertEqual(len(v.errors), 1)
         self.assertIn("should be a list or dict", v.errors[0][0])
 
+    def test_fields_js_validator_invalid_error_shape_raises_value_error(self):
+        from dayamlchecker import yaml_structure
+
+        class BrokenJSShowIf:
+            def __init__(self, *_args, **_kwargs):
+                self.errors = [("missing code", 1)]
+
+        with patch.object(yaml_structure, "JSShowIf", BrokenJSShowIf):
+            with self.assertRaisesRegex(
+                ValueError, "Validator errors must be 3-tuples"
+            ):
+                yaml_structure.DAFields(
+                    [
+                        {
+                            "Favorite fruit": "fruit",
+                            "js show if": 'val("fruit") === "apple"',
+                        }
+                    ]
+                )
+
+    def test_fields_python_validator_invalid_error_shape_raises_value_error(self):
+        from dayamlchecker import yaml_structure
+
+        class BrokenPythonText:
+            def __init__(self, *_args, **_kwargs):
+                self.errors = [("missing code", 1)]
+
+        with patch.object(yaml_structure, "PythonText", BrokenPythonText):
+            with self.assertRaisesRegex(
+                ValueError, "Validator errors must be 3-tuples"
+            ):
+                yaml_structure.DAFields(
+                    [
+                        {
+                            "Favorite fruit": "fruit",
+                            "show if": {"code": "fruit == 'apple'"},
+                        }
+                    ]
+                )
+
 
 class TestShowIf(unittest.TestCase):
     """Tests for the ShowIf validator (non-js variants)."""
@@ -1621,27 +1716,117 @@ class TestYAMLError(unittest.TestCase):
     def test_str_experimental(self):
         from dayamlchecker.yaml_structure import YAMLError
 
-        err = YAMLError(err_str="bad key", line_number=5, file_name="test.yml")
+        err = YAMLError(
+            err_str="bad key",
+            line_number=5,
+            file_name="test.yml",
+            code="W999",
+        )
         result = str(err)
         self.assertIn("test.yml", result)
         self.assertIn("5", result)
         self.assertIn("bad key", result)
+        self.assertIn("[W999]", result)
         self.assertNotIn("REAL ERROR", result)
 
     def test_str_non_experimental(self):
         from dayamlchecker.yaml_structure import YAMLError
 
         err = YAMLError(
-            err_str="bad key", line_number=5, file_name="test.yml", experimental=False
+            err_str="bad key",
+            line_number=5,
+            file_name="test.yml",
+            experimental=False,
+            code="E999",
         )
         result = str(err)
         self.assertIn("REAL ERROR", result)
+        self.assertIn("[E999]", result)
 
     def test_default_experimental_true(self):
         from dayamlchecker.yaml_structure import YAMLError
 
         err = YAMLError(err_str="x", line_number=1, file_name="f.yml")
         self.assertTrue(err.experimental)
+
+    def test_code_defaults_to_none(self):
+        from dayamlchecker.yaml_structure import YAMLError
+
+        err = YAMLError(err_str="x", line_number=1, file_name="f.yml")
+        self.assertIsNone(err.code)
+
+    def test_format_show_experimental_false_omits_real_error(self):
+        from dayamlchecker.yaml_structure import YAMLError
+
+        err = YAMLError(
+            err_str="bad key",
+            line_number=5,
+            file_name="test.yml",
+            experimental=False,
+            code="E999",
+        )
+        result = err.format(show_experimental=False)
+        self.assertNotIn("REAL ERROR", result)
+        self.assertIn("[E999]", result)
+        self.assertIn("bad key", result)
+
+
+class TestMessageRegistry(unittest.TestCase):
+    def test_message_codes_are_unique(self):
+        codes = list(MESSAGE_DEFINITIONS)
+        self.assertEqual(len(codes), len(set(codes)))
+
+    def test_message_codes_follow_expected_pattern(self):
+        for code in MESSAGE_DEFINITIONS:
+            # Structural check with precise numeric boundaries included
+            self.assertRegex(code, MESSAGE_CODE_PATTERN)
+            kind = code[0]
+            num = int(code[1:])
+            if kind == "E":
+                # E codes must be in the range 101–399
+                self.assertGreaterEqual(num, 101, f"Invalid E-code: {code}")
+                self.assertLessEqual(num, 399, f"Invalid E-code: {code}")
+            elif kind == "W":
+                # W codes must be in the range 101–699
+                self.assertGreaterEqual(num, 101, f"Invalid W-code: {code}")
+                self.assertLessEqual(num, 699, f"Invalid W-code: {code}")
+            elif kind == "C":
+                # C codes must be 101 or higher (no upper bound)
+                self.assertGreaterEqual(num, 101, f"Invalid C-code: {code}")
+
+    def test_messagecode_constants_match_registry(self):
+        """
+        Ensure that all public constants defined on MessageCode:
+        - have values present in MESSAGE_DEFINITIONS
+        - follow the same pattern and numeric ranges as registry codes.
+        """
+        for name, value in vars(MessageCode).items():
+            # Consider only public, constant-like attributes
+            if name.startswith("_"):
+                continue
+            if not name.isupper():
+                continue
+
+            code = value
+            # The constant value must be a registered message code
+            self.assertIn(
+                code,
+                MESSAGE_DEFINITIONS,
+                msg=f"MessageCode.{name} value {code!r} not in MESSAGE_DEFINITIONS",
+            )
+
+            # Reuse the structural and precision checks
+            self.assertRegex(code, MESSAGE_CODE_PATTERN)
+            kind = code[0]
+            num = int(code[1:])
+            if kind == "E":
+                self.assertGreaterEqual(num, 101, f"Invalid E-code for {name}: {code}")
+                self.assertLessEqual(num, 399, f"Invalid E-code for {name}: {code}")
+            elif kind == "W":
+                self.assertGreaterEqual(num, 101, f"Invalid W-code for {name}: {code}")
+                self.assertLessEqual(num, 699, f"Invalid W-code for {name}: {code}")
+            elif kind == "C":
+                self.assertGreaterEqual(num, 101, f"Invalid C-code for {name}: {code}")
 
 
 class TestFindErrors(unittest.TestCase):
@@ -1685,6 +1870,43 @@ class TestFindErrors(unittest.TestCase):
 
             os.unlink(fname)
 
+    def test_find_errors_large_invalid_fixture(self):
+        from dayamlchecker.yaml_structure import find_errors
+
+        errs = find_errors(str(LARGE_INVALID_INTERVIEW_FIXTURE))
+        codes = {err.code for err in errs}
+        expected_codes = set(MESSAGE_DEFINITIONS) - {
+            MessageCode.JINJA2_SYNTAX_ERROR,
+            MessageCode.JINJA2_TEMPLATE_ERROR,
+        }
+
+        self.assertEqual(
+            codes,
+            expected_codes,
+            f"Expected fixture to produce {sorted(expected_codes)}, got {sorted(codes)}",
+        )
+
+    def test_error_code_fixtures_cover_entire_registry(self):
+        from dayamlchecker.yaml_structure import find_errors
+
+        covered_codes = set()
+        for fixture_path in ALL_ERROR_CODE_FIXTURES:
+            covered_codes.update(err.code for err in find_errors(str(fixture_path)))
+
+        self.assertEqual(
+            covered_codes,
+            set(MESSAGE_DEFINITIONS),
+            f"Expected fixtures to cover {sorted(MESSAGE_DEFINITIONS)}, got {sorted(covered_codes)}",
+        )
+
+    def test_find_errors_large_valid_fixture(self):
+        from dayamlchecker.yaml_structure import find_errors
+
+        errs = find_errors(str(LARGE_VALID_INTERVIEW_FIXTURE))
+        self.assertEqual(
+            errs, [], f"Expected no errors from valid fixture, got: {errs}"
+        )
+
 
 class TestFindErrorsEdgeCases(unittest.TestCase):
     """Tests for edge cases in find_errors_from_string."""
@@ -1721,6 +1943,25 @@ class TestFindErrorsEdgeCases(unittest.TestCase):
         errs = find_errors_from_string(content, input_file="<non_str_key>")
         # Should produce an error about unexpected keys
         self.assertGreater(len(errs), 0)
+
+    def test_invalid_validator_error_shape_raises_value_error(self):
+        """Malformed validator outputs should fail explicitly, even with assertions disabled."""
+        import dayamlchecker.yaml_structure as yaml_structure
+
+        class BrokenValidator:
+            def __init__(self, _value):
+                self.errors = [("missing code", 1)]
+
+        content = "---\nquestion: Hello\n"
+        with patch.dict(
+            yaml_structure.big_dict,
+            {"question": {"type": BrokenValidator}},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "Validator errors must be 3-tuples"
+            ):
+                find_errors_from_string(content, input_file="<broken_validator>")
 
 
 class TestProcessFile(unittest.TestCase):
@@ -1974,6 +2215,13 @@ class TestJSShowIfNonString(unittest.TestCase):
         self.assertEqual(len(v.errors), 1)
         self.assertIn("must be a string", v.errors[0][0])
 
+    def test_js_show_if_reference_helper_rejects_non_strings(self):
+        from dayamlchecker.yaml_structure import JSShowIf
+
+        v = JSShowIf('val("field")', modifier_key="js show if")
+
+        self.assertFalse(v._references_screen_variable(42))
+
 
 class TestShowIfMalformedCodePrefix(unittest.TestCase):
     """ShowIf string values that start with 'code:' should be flagged."""
@@ -1984,6 +2232,13 @@ class TestShowIfMalformedCodePrefix(unittest.TestCase):
         v = ShowIf("code: x == 1")
         self.assertEqual(len(v.errors), 1)
         self.assertIn("malformed", v.errors[0][0])
+
+    def test_show_if_dict_variable_form_is_valid(self):
+        from dayamlchecker.yaml_structure import ShowIf
+
+        v = ShowIf({"variable": "ready", "is": True})
+
+        self.assertEqual(v.errors, [])
 
     def test_interview_order_reference_without_matching_guard_errors(self):
         """Error when interview-order style code references a conditionally shown field without guard"""
@@ -2201,6 +2456,502 @@ fields:
             any("visibility logic is nested" in e.err_str.lower() for e in errs),
             f"Did not expect nesting warning, got: {errs}",
         )
+
+
+class TestYamlStructureHelpers(unittest.TestCase):
+    def test_normalize_validator_error_requires_tuple(self):
+        from dayamlchecker.yaml_structure import _normalize_validator_error
+
+        with self.assertRaisesRegex(TypeError, "must be tuples"):
+            _normalize_validator_error("not-a-tuple")
+
+    def test_normalize_validator_error_requires_string_message(self):
+        from dayamlchecker.yaml_structure import _normalize_validator_error
+
+        with self.assertRaisesRegex(TypeError, "message must be a string"):
+            _normalize_validator_error((123, 1, MessageCode.NO_POSSIBLE_TYPES))
+
+    def test_normalize_validator_error_requires_int_line_number(self):
+        from dayamlchecker.yaml_structure import _normalize_validator_error
+
+        with self.assertRaisesRegex(TypeError, "line number must be an int"):
+            _normalize_validator_error(("msg", "1", MessageCode.NO_POSSIBLE_TYPES))
+
+    def test_normalize_validator_error_requires_string_code(self):
+        from dayamlchecker.yaml_structure import _normalize_validator_error
+
+        with self.assertRaisesRegex(TypeError, "code must be a string"):
+            _normalize_validator_error(("msg", 1, 123))
+
+    def test_format_message_and_experimental_lookup_reject_unknown_codes(self):
+        with self.assertRaisesRegex(ValueError, "Unknown message code"):
+            format_message("E999")
+
+        with self.assertRaisesRegex(ValueError, "Unknown message code"):
+            is_experimental_code("E999")
+
+    def test_validation_code_handles_second_parse_syntax_error(self):
+        import ast as pyast
+
+        from dayamlchecker.yaml_structure import ValidationCode
+
+        with patch(
+            "dayamlchecker.yaml_structure.ast.parse",
+            side_effect=[pyast.parse("x = 1"), SyntaxError("boom")],
+        ):
+            validator = ValidationCode("x = 1")
+
+        self.assertEqual(validator.errors, [])
+
+    def test_da_type_accepts_any_value(self):
+        from dayamlchecker.yaml_structure import DAType
+
+        self.assertEqual(DAType("Individual").errors, [])
+
+    def test_lc_line_defaults_to_one_without_metadata(self):
+        from dayamlchecker.yaml_structure import _lc_line
+
+        self.assertEqual(_lc_line(object()), 1)
+
+    def test_interview_order_style_detects_id_and_comment_markers(self):
+        from dayamlchecker.yaml_structure import _is_interview_order_style_block
+
+        self.assertTrue(_is_interview_order_style_block({"id": "Interview Order"}))
+        self.assertTrue(_is_interview_order_style_block({"comment": "interview_order"}))
+        self.assertFalse(_is_interview_order_style_block({"id": "plain"}))
+
+    def test_extract_field_var_name_ignores_non_field_inputs(self):
+        from dayamlchecker.yaml_structure import _extract_field_var_name
+
+        self.assertIsNone(_extract_field_var_name("not a dict"))
+        self.assertIsNone(_extract_field_var_name({"show if": "ready"}))
+
+    def test_lc_line_with_missing_line_attribute_defaults_to_one(self):
+        from types import SimpleNamespace
+
+        from dayamlchecker.yaml_structure import _lc_line
+
+        self.assertEqual(_lc_line(SimpleNamespace(lc=SimpleNamespace(line=None))), 1)
+
+    def test_extract_controller_vars_and_js_vars_handle_non_strings(self):
+        from dayamlchecker.yaml_structure import (
+            _extract_controller_vars_for_field_modifier,
+            _extract_vars_from_js_condition,
+        )
+
+        self.assertEqual(_extract_controller_vars_for_field_modifier(None), set())
+        self.assertEqual(_extract_vars_from_js_condition(None), set())
+
+    def test_guard_candidates_cover_blank_and_hide_dict_paths(self):
+        from dayamlchecker.yaml_structure import _guard_candidates_for_modifier
+
+        self.assertEqual(_guard_candidates_for_modifier("show if", "   "), [])
+        self.assertEqual(
+            _guard_candidates_for_modifier(
+                "hide if", {"variable": "status", "is": "done"}
+            ),
+            ["status != 'done'", "not (status == 'done')"],
+        )
+        self.assertEqual(
+            _guard_candidates_for_modifier("hide if", {"code": "ready"}),
+            ["not (ready)"],
+        )
+        self.assertEqual(
+            _guard_candidates_for_modifier("hide if", {"variable": "ready"}),
+            ["not (ready)", "not ready"],
+        )
+
+    def test_statement_span_returns_none_without_line_numbers(self):
+        from dayamlchecker.yaml_structure import _statement_span
+
+        class DummyStmt:
+            pass
+
+        self.assertIsNone(_statement_span([DummyStmt()]))
+
+    def test_extract_branch_guards_returns_empty_on_syntax_error(self):
+        from dayamlchecker.yaml_structure import _extract_branch_guards_by_line
+
+        self.assertEqual(_extract_branch_guards_by_line("if :\n  pass"), {})
+
+    def test_extract_branch_guards_skips_when_condition_cannot_be_rendered(self):
+        import ast
+
+        from dayamlchecker.yaml_structure import _extract_branch_guards_by_line
+
+        if_node = ast.parse("if flag:\n    pass\n").body[0]
+
+        with patch("dayamlchecker.yaml_structure.ast.walk", return_value=[if_node]):
+            with patch(
+                "dayamlchecker.yaml_structure.ast.get_source_segment",
+                return_value=None,
+            ):
+                with patch(
+                    "dayamlchecker.yaml_structure.ast.unparse",
+                    side_effect=Exception("boom"),
+                ):
+                    self.assertEqual(
+                        _extract_branch_guards_by_line("if flag:\n    pass\n"), {}
+                    )
+
+    def test_extract_branch_guards_handles_missing_lineno_and_else_only_spans(self):
+        import ast
+
+        from dayamlchecker.yaml_structure import _extract_branch_guards_by_line
+
+        if_node = ast.parse("if flag:\n    pass\nelse:\n    other()\n").body[0]
+        if_node.lineno = None
+
+        with patch("dayamlchecker.yaml_structure.ast.walk", return_value=[if_node]):
+            with patch(
+                "dayamlchecker.yaml_structure._statement_span",
+                side_effect=[None, (3, 3)],
+            ):
+                self.assertEqual(
+                    _extract_branch_guards_by_line(
+                        "if flag:\n    pass\nelse:\n    other()\n"
+                    ),
+                    {3: ["not (flag)"]},
+                )
+
+    def test_has_matching_guard_accepts_empty_expectations(self):
+        from dayamlchecker.yaml_structure import _has_matching_guard
+
+        self.assertTrue(_has_matching_guard(["anything"], []))
+
+    def test_has_matching_guard_returns_false_when_nothing_matches(self):
+        from dayamlchecker.yaml_structure import _has_matching_guard
+
+        self.assertFalse(_has_matching_guard(["x == 1"], ["y == 2"]))
+
+    def test_max_screen_visibility_nesting_depth_handles_edge_cases_and_cycles(self):
+        from dayamlchecker.yaml_structure import _max_screen_visibility_nesting_depth
+
+        self.assertEqual(_max_screen_visibility_nesting_depth({"fields": []}), 0)
+        self.assertEqual(
+            _max_screen_visibility_nesting_depth({"fields": [{"note": "Only note"}]}),
+            0,
+        )
+        self.assertEqual(
+            _max_screen_visibility_nesting_depth({"fields": ["not-a-dict"]}),
+            0,
+        )
+        self.assertEqual(
+            _max_screen_visibility_nesting_depth(
+                {
+                    "fields": [
+                        {"First": "a", "show if": "b"},
+                        {"Second": "b", "show if": "a"},
+                    ]
+                }
+            ),
+            2,
+        )
+
+    def test_find_screen_variable_references_in_code_handles_invalid_and_indexed_vars(
+        self,
+    ):
+        from dayamlchecker.yaml_structure import DAFields
+
+        validator = DAFields([])
+
+        self.assertEqual(
+            validator._find_screen_variable_references_in_code("if :", {"name"}),
+            set(),
+        )
+        self.assertEqual(
+            validator._find_screen_variable_references_in_code(
+                "children[i].name", {"children[i].name"}
+            ),
+            {"children[i].name"},
+        )
+
+    def test_javascript_text_accepts_any_value(self):
+        from dayamlchecker.yaml_structure import JavascriptText
+
+        self.assertEqual(JavascriptText("alert(1)").errors, [])
+
+    def test_js_show_if_handles_non_val_calls_and_missing_arguments(self):
+        from dayamlchecker.yaml_structure import JSShowIf
+
+        validator = JSShowIf("foo(bar(), val())", modifier_key="js show if")
+
+        self.assertTrue(
+            any("quoted string" in err[0].lower() for err in validator.errors)
+        )
+
+    def test_js_show_if_traverses_dict_and_list_nodes_explicitly(self):
+        from dayamlchecker.yaml_structure import JSShowIf
+
+        class Parsed:
+            def toDict(self):
+                return {
+                    "type": "Program",
+                    "body": [
+                        {
+                            "type": "CallExpression",
+                            "callee": {"type": "Identifier", "name": "foo"},
+                            "arguments": [],
+                        },
+                        {
+                            "type": "CallExpression",
+                            "callee": {"type": "Identifier", "name": "val"},
+                            "arguments": [],
+                            "loc": {"start": {"line": 1}},
+                        },
+                    ],
+                }
+
+        with patch(
+            "dayamlchecker.yaml_structure.esprima.parseScript",
+            return_value=Parsed(),
+        ):
+            validator = JSShowIf("ignored", modifier_key="js show if")
+
+        self.assertTrue(
+            any("quoted string" in err[0].lower() for err in validator.errors)
+        )
+
+    def test_fields_detects_dynamic_code_only_entry(self):
+        from dayamlchecker.yaml_structure import DAFields
+
+        validator = DAFields([{"code": "field_list"}])
+
+        self.assertTrue(validator.has_dynamic_fields_code)
+
+    def test_fields_skip_non_dict_entries_during_modifier_validation(self):
+        from dayamlchecker.yaml_structure import DAFields
+
+        validator = DAFields([{"Name": "name"}, "not-a-dict"])
+
+        self.assertEqual(validator.errors, [])
+
+    def test_show_if_simple_string_form_is_accepted(self):
+        from dayamlchecker.yaml_structure import ShowIf
+
+        self.assertEqual(ShowIf("ready").errors, [])
+
+    def test_show_if_dict_variable_form_is_accepted_directly(self):
+        from dayamlchecker.yaml_structure import ShowIf
+
+        self.assertEqual(ShowIf({"variable": "ready"}).errors, [])
+
+    def test_extract_field_name_skips_modifier_keys_before_returning_field(self):
+        from dayamlchecker.yaml_structure import DAFields
+
+        validator = DAFields([])
+
+        self.assertEqual(
+            validator._extract_field_name({"show if": "ready", "Name": "person.name"}),
+            "person.name",
+        )
+
+    def test_extract_field_name_skips_non_string_field_values(self):
+        from dayamlchecker.yaml_structure import DAFields
+
+        validator = DAFields([])
+
+        self.assertEqual(
+            validator._extract_field_name({"Count": 1, "Name": "person.name"}),
+            "person.name",
+        )
+
+    def test_extract_field_var_name_skips_modifier_keys_before_returning_field(self):
+        from dayamlchecker.yaml_structure import _extract_field_var_name
+
+        self.assertEqual(
+            _extract_field_var_name({"show if": "ready", "Name": "person.name"}),
+            "person.name",
+        )
+
+    def test_extract_field_var_name_skips_non_string_field_values(self):
+        from dayamlchecker.yaml_structure import _extract_field_var_name
+
+        self.assertEqual(
+            _extract_field_var_name({"Count": 1, "Name": "person.name"}),
+            "person.name",
+        )
+
+    def test_guard_candidates_cover_non_hide_variable_without_is(self):
+        from dayamlchecker.yaml_structure import _guard_candidates_for_modifier
+
+        self.assertEqual(
+            _guard_candidates_for_modifier("show if", {"variable": "ready"}),
+            ["ready"],
+        )
+
+    def test_validate_python_modifier_allows_known_string_variable(self):
+        from dayamlchecker.yaml_structure import DAFields
+
+        validator = DAFields([])
+        validator._validate_python_modifier(
+            "show if",
+            "toggle",
+            {"label": "Reason"},
+            {"toggle"},
+        )
+
+        self.assertEqual(validator.errors, [])
+
+    def test_fields_x_alias_matches_deep_screen_variable(self):
+        content = """
+question: |
+  Generic screen
+fields:
+  - Fruit: children[i].fruit
+  - Reason: reason
+    show if: x.fruit
+"""
+
+        errs = find_errors_from_string(content, input_file="<generic>")
+
+        self.assertFalse(
+            any(
+                e.code == MessageCode.FIELD_MODIFIER_UNKNOWN_VARIABLE_STRING
+                for e in errs
+            ),
+            errs,
+        )
+
+    def test_max_screen_visibility_nesting_depth_skips_non_dict_items_after_building_vars(
+        self,
+    ):
+        from dayamlchecker.yaml_structure import _max_screen_visibility_nesting_depth
+
+        self.assertEqual(
+            _max_screen_visibility_nesting_depth(
+                {"fields": [{"Name": "name"}, "not-a-dict"]}
+            ),
+            0,
+        )
+
+    def test_fields_string_modifier_known_variable_does_not_error(self):
+        content = """
+question: |
+  Sample
+fields:
+  - Toggle: toggle
+  - Reason: reason
+    show if: toggle
+"""
+
+        errs = find_errors_from_string(content, input_file="<screen>")
+
+        self.assertFalse(
+            any(
+                e.code == MessageCode.FIELD_MODIFIER_UNKNOWN_VARIABLE_STRING
+                for e in errs
+            ),
+            errs,
+        )
+
+    def test_fields_variable_modifier_non_string_reports_type_error(self):
+        content = """
+question: |
+  Sample
+fields:
+  - Toggle: toggle
+  - Reason: reason
+    show if:
+      variable:
+        - toggle
+"""
+
+        errs = find_errors_from_string(content, input_file="<screen>")
+
+        self.assertTrue(
+            any(e.code == MessageCode.FIELD_MODIFIER_VARIABLE_TYPE for e in errs)
+        )
+
+    def test_extract_field_name_returns_none_for_non_field_items(self):
+        from dayamlchecker.yaml_structure import DAFields
+
+        validator = DAFields([])
+
+        self.assertIsNone(validator._extract_field_name("not a dict"))
+        self.assertIsNone(validator._extract_field_name({"show if": "ready"}))
+
+    def test_find_errors_duplicate_key_without_problem_mark(self):
+        import dayamlchecker.yaml_structure as yaml_structure
+        from unittest.mock import Mock
+
+        class DummyDuplicateKeyError(yaml_structure._RuamelDuplicateKeyError):
+            pass
+
+        err = DummyDuplicateKeyError.__new__(DummyDuplicateKeyError)
+        err.problem = 'found duplicate key "dup"'
+        err.problem_mark = None
+
+        loader = Mock()
+        loader.allow_duplicate_keys = False
+        loader.load.side_effect = err
+
+        with patch("dayamlchecker.yaml_structure._RuamelYAML", return_value=loader):
+            errs = yaml_structure.find_errors_from_string(
+                "---\nquestion: Hello\n", input_file="<dup>"
+            )
+
+        self.assertTrue(any(e.code == MessageCode.YAML_DUPLICATE_KEY for e in errs))
+        self.assertEqual(errs[0].line_number, 1)
+
+    def test_find_errors_marked_yaml_error_without_marks(self):
+        import dayamlchecker.yaml_structure as yaml_structure
+        from unittest.mock import Mock
+
+        class DummyMarkedYAMLError(yaml_structure._RuamelMarkedYAMLError):
+            def __str__(self):
+                return "marked parse error"
+
+        err = DummyMarkedYAMLError.__new__(DummyMarkedYAMLError)
+        err.context_mark = None
+        err.problem_mark = None
+
+        loader = Mock()
+        loader.allow_duplicate_keys = False
+        loader.load.side_effect = err
+
+        with patch("dayamlchecker.yaml_structure._RuamelYAML", return_value=loader):
+            errs = yaml_structure.find_errors_from_string(
+                "---\nquestion: Hello\n", input_file="<marked>"
+            )
+
+        self.assertTrue(any(e.code == MessageCode.YAML_PARSE_ERROR for e in errs))
+
+    def test_find_errors_generic_yaml_exception_uses_parse_error_path(self):
+        import dayamlchecker.yaml_structure as yaml_structure
+        from unittest.mock import Mock
+
+        loader = Mock()
+        loader.allow_duplicate_keys = False
+        loader.load.side_effect = RuntimeError("boom")
+
+        with patch("dayamlchecker.yaml_structure._RuamelYAML", return_value=loader):
+            errs = yaml_structure.find_errors_from_string(
+                "---\nquestion: Hello\n", input_file="<generic>"
+            )
+
+        self.assertTrue(any(e.code == MessageCode.YAML_PARSE_ERROR for e in errs))
+
+    def test_partner_block_pair_does_not_trigger_too_many_types(self):
+        content = """
+question: |
+  Hello
+attachment:
+  name: Greeting
+  filename: greeting
+  content: |
+    Hello world
+"""
+
+        errs = find_errors_from_string(content, input_file="<partner>")
+
+        self.assertFalse(any(e.code == MessageCode.TOO_MANY_TYPES for e in errs))
+
+    def test_variable_candidates_strip_multiple_trailing_indexes(self):
+        result = _variable_candidates("items[0][1]")
+
+        self.assertIn("items[0]", result)
+        self.assertIn("items", result)
 
 
 if __name__ == "__main__":

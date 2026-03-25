@@ -13,7 +13,8 @@ def _print_help(output_stream: TextIO) -> None:
         "Commands:\n"
         "  check   Validate Docassemble YAML files (defaults to ./docassemble)\n"
         "  format  Format Python code blocks in Docassemble YAML files (defaults to ./docassemble)\n\n"
-        "Use 'dayaml <command> --help' for command-specific options.",
+        "Use 'dayaml <command> --help' for command-specific options.\n"
+        "The 'check' command supports '--show-experimental'/\"--no-show-experimental\" to control inclusion of the legacy REAL ERROR prefix.",
         file=output_stream,
     )
 
@@ -44,5 +45,5 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
