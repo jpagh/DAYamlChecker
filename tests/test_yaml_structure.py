@@ -2082,6 +2082,110 @@ class TestProcessFile(unittest.TestCase):
 class TestDAFieldsDeepPaths(unittest.TestCase):
     """Cover the deeper `_validate_field_modifiers` paths in DAFields."""
 
+    def test_accept_with_unquoted_extension_list_errors(self):
+        content = """\
+question: |
+  Sample
+fields:
+  - Upload deed document: deed_upload
+    datatype: file
+    accept: |
+      .pdf,.jpg,.jpeg,.png,.tiff,.tif
+"""
+        errs = find_errors_from_string(content, input_file="<test>")
+        accept_errs = [
+            e
+            for e in errs
+            if "accept must be a python string literal" in e.err_str.lower()
+        ]
+        self.assertGreaterEqual(
+            len(accept_errs),
+            1,
+            f"Expected accept syntax error, got: {errs}",
+        )
+
+    def test_accept_with_quoted_string_is_valid(self):
+        content = """\
+question: |
+  Sample
+fields:
+  - Upload deed document: deed_upload
+    datatype: file
+    accept: "'application/pdf,image/jpeg,image/png,image/tiff'"
+"""
+        errs = find_errors_from_string(content, input_file="<test>")
+        accept_errs = [e for e in errs if "accept" in e.err_str.lower()]
+        self.assertEqual(accept_errs, [], f"Unexpected accept errors: {accept_errs}")
+
+    def test_accept_with_non_string_value_errors(self):
+        content = """\
+question: |
+  Sample
+fields:
+  - Upload deed document: deed_upload
+    datatype: file
+    accept:
+      - .pdf
+      - .jpg
+"""
+        errs = find_errors_from_string(content, input_file="<test>")
+        accept_errs = [e for e in errs if e.code == "W121"]
+        self.assertGreaterEqual(
+            len(accept_errs),
+            1,
+            f"Expected type error for non-string accept, got: {errs}",
+        )
+
+    def test_accept_with_mime_types_is_valid(self):
+        content = """\
+question: |
+  Sample
+fields:
+  - Upload deed document: deed_upload
+    datatype: file
+    accept: "'application/pdf,image/jpeg,image/png'"
+"""
+        errs = find_errors_from_string(content, input_file="<test>")
+        accept_errs = [e for e in errs if "accept" in e.err_str.lower()]
+        self.assertEqual(accept_errs, [], f"Unexpected accept errors: {accept_errs}")
+
+    def test_accept_block_scalar_double_quoted_string_is_valid(self):
+        """Block scalar with double-quoted Python string literal is valid."""
+        content = """\
+question: |
+  Sample
+fields:
+  - Upload deed document: deed_upload
+    datatype: file
+    accept: |
+      "application/pdf,image/jpeg,image/png,image/tiff"
+"""
+        errs = find_errors_from_string(content, input_file="<test>")
+        accept_errs = [e for e in errs if "accept" in e.err_str.lower()]
+        self.assertEqual(accept_errs, [], f"Unexpected accept errors: {accept_errs}")
+
+    def test_accept_unquoted_mime_type_errors(self):
+        """Bare MIME type without Python quoting (e.g. application/pdf) is caught."""
+        content = """\
+question: |
+  Sample
+fields:
+  - Upload deed document: deed_upload
+    datatype: file
+    accept: application/pdf
+"""
+        errs = find_errors_from_string(content, input_file="<test>")
+        accept_errs = [
+            e
+            for e in errs
+            if "accept must be a python string literal" in e.err_str.lower()
+        ]
+        self.assertGreaterEqual(
+            len(accept_errs),
+            1,
+            f"Expected non-string-literal error for bare MIME type, got: {errs}",
+        )
+
     def test_show_if_dict_missing_variable_and_code_keys_error(self):
         """show if dict without 'variable' or 'code' should trigger an error."""
         content = """\
@@ -2532,6 +2636,45 @@ class TestYamlStructureHelpers(unittest.TestCase):
         from dayamlchecker.yaml_structure import _lc_line
 
         self.assertEqual(_lc_line(SimpleNamespace(lc=SimpleNamespace(line=None))), 1)
+
+    def test_lc_key_line_no_lc_attribute(self):
+        from dayamlchecker.yaml_structure import _lc_key_line
+
+        self.assertEqual(_lc_key_line(object(), "k"), 1)
+
+    def test_lc_key_line_key_getter_not_callable(self):
+        from types import SimpleNamespace
+
+        from dayamlchecker.yaml_structure import _lc_key_line
+
+        obj = SimpleNamespace(lc=SimpleNamespace(key="not callable", line=5))
+        self.assertEqual(_lc_key_line(obj, "k"), 6)
+
+    def test_lc_key_line_key_getter_raises(self):
+        from types import SimpleNamespace
+
+        from dayamlchecker.yaml_structure import _lc_key_line
+
+        obj = SimpleNamespace(
+            lc=SimpleNamespace(key=lambda k: (_ for _ in ()).throw(KeyError(k)), line=3)
+        )
+        self.assertEqual(_lc_key_line(obj, "missing"), 4)
+
+    def test_lc_key_line_non_tuple_line_info(self):
+        from types import SimpleNamespace
+
+        from dayamlchecker.yaml_structure import _lc_key_line
+
+        obj = SimpleNamespace(lc=SimpleNamespace(key=lambda k: "not a tuple", line=2))
+        self.assertEqual(_lc_key_line(obj, "k"), 3)
+
+    def test_lc_key_line_non_int_in_tuple(self):
+        from types import SimpleNamespace
+
+        from dayamlchecker.yaml_structure import _lc_key_line
+
+        obj = SimpleNamespace(lc=SimpleNamespace(key=lambda k: ("not_int",), line=4))
+        self.assertEqual(_lc_key_line(obj, "k"), 5)
 
     def test_extract_controller_vars_and_js_vars_handle_non_strings(self):
         from dayamlchecker.yaml_structure import (

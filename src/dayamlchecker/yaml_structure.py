@@ -214,6 +214,66 @@ class PythonText:
             ]
 
 
+class AcceptFieldValue:
+    """Validates the ``accept`` modifier on a Docassemble file-upload field.
+
+    DA evaluates ``accept`` as a Python expression at runtime, so the YAML
+    value must be a Python string literal.  This means the MIME type string
+    needs an extra layer of quoting:
+
+    * ``accept: "'application/pdf,image/jpeg'"``  (YAML double-quotes wrapping
+      a Python single-quoted string)
+    * ``accept: |`` followed by ``"application/pdf,image/jpeg"`` on the next
+      line (block scalar whose content is a double-quoted Python string)
+
+    A common mistake is writing the MIME string bare, e.g.
+    ``accept: application/pdf`` — YAML delivers ``application/pdf`` to DA,
+    which parses as Python division (``application / pdf``) and raises a
+    ``NameError`` at runtime.
+    """
+
+    _HINT = (
+        "accept must be a Python string literal. "
+        "Wrap the MIME types in quotes so DA can eval them: "
+        "accept: \"'application/pdf,image/jpeg,image/png,image/tiff'\""
+    )
+
+    def __init__(self, x):
+        self.errors = []
+        if not isinstance(x, str):
+            self.errors = [
+                _validator_error(
+                    MessageCode.PYTHON_CODE_TYPE,
+                    value_type=type(x).__name__,
+                )
+            ]
+            return
+        try:
+            tree = ast.parse(x.strip(), mode="eval")
+        except SyntaxError as ex:
+            lineno = ex.lineno or 1
+            msg = ex.msg or str(ex)
+            self.errors = [
+                (
+                    f"{self._HINT}. Parser message: {msg}",
+                    lineno,
+                    MessageCode.PYTHON_SYNTAX_ERROR,
+                )
+            ]
+            return
+        if not (
+            isinstance(tree.body, ast.Constant) and isinstance(tree.body.value, str)
+        ):
+            self.errors = [
+                (
+                    f"{self._HINT}. "
+                    f"Got a {type(tree.body).__name__} expression instead of a string literal.",
+                    1,
+                    MessageCode.PYTHON_SYNTAX_ERROR,
+                )
+            ]
+
+
 class ValidationCode(PythonText):
     """Validator for question-level `validation code`.
 
@@ -541,6 +601,7 @@ class DAFields:
         "read only",
         "min",
         "max",
+        "accept",
     }
 
     def __init__(self, x):
@@ -572,6 +633,9 @@ class DAFields:
 
     def _line_for(self, field_item, code_line=1):
         return _lc_line(field_item) + max(code_line - 1, 0)
+
+    def _key_line_for(self, field_item, key, code_line=1):
+        return _lc_key_line(field_item, key) + max(code_line - 1, 0)
 
     def _extract_field_name(self, field_item):
         if not isinstance(field_item, dict):
@@ -716,6 +780,18 @@ class DAFields:
         for field_item in fields_list:
             if not isinstance(field_item, dict):
                 continue
+
+            if "accept" in field_item:
+                validator = AcceptFieldValue(field_item["accept"])
+                for err in validator.errors:
+                    err_msg, err_line, err_code = _normalize_validator_error(err)
+                    self.errors.append(
+                        (
+                            err_msg,
+                            self._key_line_for(field_item, "accept", err_line),
+                            err_code,
+                        )
+                    )
 
             for js_key in self.js_modifier_keys:
                 if js_key in field_item:
@@ -1187,6 +1263,25 @@ def _lc_line(obj: Any) -> int:
         if line is not None:
             return line + 1
     return 1
+
+
+def _lc_key_line(obj: Any, key: Any) -> int:
+    """Return a 1-indexed line number for a mapping key when available."""
+    lc = getattr(obj, "lc", None)
+    if lc is not None:
+        key_getter = getattr(lc, "key", None)
+        if callable(key_getter):
+            try:
+                line_info = key_getter(key)
+            except (AttributeError, KeyError, TypeError):
+                line_info = None
+            if isinstance(line_info, tuple) and len(line_info) >= 1:
+                line = line_info[0]
+                if isinstance(line, int):
+                    return line + 1
+    # If key-specific location data is unavailable (e.g. no metadata for this key,
+    # unexpected type/shape, or non-integer line), fall back to the object's line.
+    return _lc_line(obj)
 
 
 def _contains_interview_order_marker(value: Any) -> bool:
