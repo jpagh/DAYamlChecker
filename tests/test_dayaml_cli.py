@@ -115,6 +115,27 @@ def test_dayaml_check_propagates_nonzero_for_invalid_file():
         assert result.returncode != 0
 
 
+def test_dayaml_check_returns_zero_for_warning_only_file():
+    with TemporaryDirectory() as tmp:
+        warning_file = Path(tmp) / "warning.yml"
+        warning_file.write_text(
+            "---\n"
+            "question: Hello\n"
+            "fields:\n"
+            "  - Preferred salutation: preferred_salutation\n"
+            "  - Follow up: follow_up\n"
+            "    show if:\n"
+            '      code: preferred_salutation == "Ms."\n',
+            encoding="utf-8",
+        )
+
+        result = _run_dayaml("check", str(warning_file))
+
+        assert result.returncode == 0
+        assert "warnings (1)" in result.stdout
+        assert "[W410]" in result.stdout
+
+
 def test_dayaml_format_check_flag_does_not_write():
     with TemporaryDirectory() as tmp:
         interview = Path(tmp) / "interview.yml"

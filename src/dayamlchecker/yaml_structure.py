@@ -65,6 +65,18 @@ space_in_str = re.compile("^[^ ]*['\"].* .*['\"][^ ]*$")
 ValidatorError = tuple[str, int, str]
 
 
+def _message_severity(code: str | None) -> Literal["error", "warning", "convention"]:
+    if code is None:
+        return "error"
+    if code.startswith("E"):
+        return "error"
+    if code.startswith("W"):
+        return "warning"
+    if code.startswith("C"):
+        return "convention"
+    return "error"
+
+
 def _normalize_validator_error(err: object) -> ValidatorError:
     if not isinstance(err, tuple):
         raise TypeError(
@@ -1237,6 +1249,10 @@ class YAMLError:
         self.experimental = experimental
         self.code = code
 
+    @property
+    def severity(self) -> Literal["error", "warning", "convention"]:
+        return _message_severity(self.code)
+
     def __str__(self):
         return self.format()
 
@@ -1815,7 +1831,7 @@ def process_file(
     quiet: bool = False,
     display_path: str | None = None,
     show_experimental: bool = False,
-) -> Literal["ok", "error", "skipped"]:
+) -> Literal["ok", "warning", "error", "skipped"]:
     """Process a single file and report its validation status.
 
     Args:
@@ -1830,7 +1846,8 @@ def process_file(
     Returns:
         A string indicating the result of processing:
         - "ok": The file was checked and no errors were found.
-        - "error": The file was checked and one or more errors were found.
+                - "warning": The file was checked and only warnings/conventions were found.
+                - "error": The file was checked and one or more errors were found.
         - "skipped": The file was not checked because it matches a known
           pattern of files to ignore.
     """
@@ -1862,11 +1879,36 @@ def process_file(
             print(f"{label}: {display_path or input_file}")
         return "ok"
 
+    error_findings = [err for err in all_errors if err.severity == "error"]
+    warning_findings = [err for err in all_errors if err.severity == "warning"]
+    convention_findings = [err for err in all_errors if err.severity == "convention"]
+
     jinja_note = " (jinja)" if is_jinja else ""
-    print(f"errors ({len(all_errors)}){jinja_note}: {display_path or input_file}")
-    for err in all_errors:
-        print(f"  {err.format(show_experimental=show_experimental)}")
-    return "error"
+
+    if error_findings:
+        print(
+            f"errors ({len(error_findings)}){jinja_note}: {display_path or input_file}"
+        )
+        for err in error_findings:
+            print(f"  {err.format(show_experimental=show_experimental)}")
+
+    if not quiet and warning_findings:
+        print(
+            f"warnings ({len(warning_findings)}){jinja_note}: {display_path or input_file}"
+        )
+        for err in warning_findings:
+            print(f"  {err.format(show_experimental=show_experimental)}")
+
+    if not quiet and convention_findings:
+        print(
+            f"conventions ({len(convention_findings)}){jinja_note}: {display_path or input_file}"
+        )
+        for err in convention_findings:
+            print(f"  {err.format(show_experimental=show_experimental)}")
+
+    if error_findings:
+        return "error"
+    return "warning"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1926,6 +1968,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     files_ok = 0
+    files_warning = 0
     files_error = 0
     files_skipped = 0
 
@@ -1938,15 +1981,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         if status == "ok":
             files_ok += 1
+        elif status == "warning":
+            files_warning += 1
         elif status == "error":
             files_error += 1
         else:
             files_skipped += 1
 
     if not args.quiet and not args.no_summary:
-        total = files_ok + files_error + files_skipped
+        total = files_ok + files_warning + files_error + files_skipped
         print(
-            f"Summary: {files_ok} ok, {files_error} errors, {files_skipped} skipped ({total} total)"
+            f"Summary: {files_ok} ok, {files_warning} warnings, {files_error} errors, {files_skipped} skipped ({total} total)"
         )
 
     return 1 if files_error > 0 else 0

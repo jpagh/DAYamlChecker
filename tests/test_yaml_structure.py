@@ -12,6 +12,7 @@ from dayamlchecker.messages import (
     is_experimental_code,
 )
 from dayamlchecker.yaml_structure import (
+    _message_severity,
     _variable_candidates,
     find_errors_from_string,
 )
@@ -34,6 +35,12 @@ ALL_ERROR_CODE_FIXTURES = (
     LARGE_INVALID_JINJA_SYNTAX_FIXTURE,
     LARGE_INVALID_JINJA_TEMPLATE_FIXTURE,
 )
+
+
+def test_message_severity_handles_none_convention_and_unknown_codes():
+    assert _message_severity(None) == "error"
+    assert _message_severity("C101") == "convention"
+    assert _message_severity("Z999") == "error"
 
 
 class TestYAMLStructure(unittest.TestCase):

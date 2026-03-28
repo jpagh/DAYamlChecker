@@ -149,6 +149,56 @@ def test_cli_file_with_errors_reports_error_status():
         assert "[E301]" in output
 
 
+def test_cli_file_with_warnings_reports_warning_status():
+    with TemporaryDirectory() as tmp:
+        warning_file = Path(tmp) / "warning.yml"
+        warning_file.write_text(
+            "---\n"
+            "question: Hello\n"
+            "fields:\n"
+            "  - Preferred salutation: preferred_salutation\n"
+            "  - Follow up: follow_up\n"
+            "    show if:\n"
+            '      code: preferred_salutation == "Ms."\n',
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            result = process_file(str(warning_file))
+        assert result == "warning"
+        output = buf.getvalue()
+        assert re.search(r"warnings \(\d+\):.*warning\.yml", output)
+        assert "[W410]" in output
+        assert "errors" not in output.lower()
+
+
+def test_cli_file_with_conventions_reports_convention_status():
+    with TemporaryDirectory() as tmp:
+        convention_file = Path(tmp) / "convention.yml"
+        convention_file.write_text(
+            "---\n"
+            "question: Total fruit\n"
+            "fields:\n"
+            "  - Apples: number_apples\n"
+            "    datatype: integer\n"
+            "  - Oranges: number_oranges\n"
+            "    datatype: integer\n"
+            "validation code: |\n"
+            "  if number_apples + number_oranges != 10:\n"
+            "    raise Exception('Bad total')\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            result = process_file(str(convention_file))
+        assert result == "warning"
+        output = buf.getvalue()
+        assert re.search(r"conventions \(\d+\):.*convention\.yml", output)
+        assert "[C101]" in output
+        assert "warnings (" not in output
+        assert "errors (" not in output
+
+
 def test_cli_main_exits_nonzero_when_any_file_has_errors():
     with TemporaryDirectory() as tmp:
         bad = Path(tmp) / "bad.yml"
@@ -156,6 +206,31 @@ def test_cli_main_exits_nonzero_when_any_file_has_errors():
 
         with patch("sys.argv", ["dayamlchecker", str(bad)]):
             assert main() == 1
+
+
+def test_cli_main_exits_zero_when_file_has_only_warnings():
+    with TemporaryDirectory() as tmp:
+        warning_file = Path(tmp) / "warning.yml"
+        warning_file.write_text(
+            "---\n"
+            "question: Hello\n"
+            "fields:\n"
+            "  - Preferred salutation: preferred_salutation\n"
+            "  - Follow up: follow_up\n"
+            "    show if:\n"
+            '      code: preferred_salutation == "Ms."\n',
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+
+        with redirect_stdout(buf):
+            with patch("sys.argv", ["dayamlchecker", str(warning_file)]):
+                result = main()
+
+        assert result == 0
+        output = buf.getvalue()
+        assert "1 warnings" in output
+        assert "0 errors" in output
 
 
 def test_cli_jinja_file_with_bad_key_reports_errors():
