@@ -1539,20 +1539,32 @@ def find_errors_from_string(
                 )
 
         doc_keys_lower = _lowercase_key_map(doc)
-        any_types = [
-            block for block in types_of_blocks.keys() if block in doc_keys_lower
-        ]
-        if len(any_types) == 0:
-            all_errors.append(
-                YAMLError(
-                    err_str=(
-                        "Couldn't identify a block type: no valid combination of keys found "
-                        "(looking for keys like question, include, metadata, code, objects, etc. See https://docassemble.org/docs.html)"
-                    ),
-                    line_number=line_number,
-                    file_name=input_file,
+        non_meta_keys_lower = {
+            key.lower()
+            for key in doc.keys()
+            if isinstance(key, str) and key != "__line__"
+        }
+        if non_meta_keys_lower == {"comment"}:
+            # docassemble ignores comment-only blocks, but once another attribute
+            # is present the block still needs a real question/directive type.
+            pass
+        else:
+            any_types = [
+                block
+                for block in types_of_blocks.keys()
+                if block in doc_keys_lower and block != "comment"
+            ]
+            if len(any_types) == 0:
+                all_errors.append(
+                    YAMLError(
+                        err_str=(
+                            "Couldn't identify a block type: no valid combination of keys found "
+                            "(looking for keys like question, include, metadata, code, objects, etc. See https://docassemble.org/docs.html)"
+                        ),
+                        line_number=line_number,
+                        file_name=input_file,
+                    )
                 )
-            )
         posb_types = [block for block in exclusive_keys if block in doc_keys_lower]
         if len(posb_types) > 1:
             if len(posb_types) == 2 and posb_types[1] in (
@@ -1567,6 +1579,7 @@ def find_errors_from_string(
                         file_name=input_file,
                     )
                 )
+
         weird_keys = []
         for attr in doc.keys():
             if attr == "__line__":

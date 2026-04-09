@@ -286,6 +286,60 @@ subquestion: |
             f"Expected structural errors for non-Docassemble YAML in accessibility mode, got: {errs}",
         )
 
+    def test_comment_only_block_valid(self):
+        yaml_content = """comment: |
+  Notes for maintainers only
+"""
+        errs = find_errors_from_string(yaml_content, input_file="<string_valid>")
+        self.assertEqual(
+            len(errs), 0, f"Expected no errors for comment-only block, got: {errs}"
+        )
+
+    def test_comment_and_id_only_block_invalid(self):
+        yaml_content = """id: comment_block
+comment: |
+  Notes for maintainers only
+"""
+        errs = find_errors_from_string(yaml_content, input_file="<string_invalid>")
+        self.assertTrue(
+            any(
+                "couldn't identify a block type: no valid combination of keys found"
+                in e.err_str.lower()
+                for e in errs
+            ),
+            f"Expected comment+id no-type validation error, got: {errs}",
+        )
+
+    def test_comment_and_non_type_attribute_block_invalid(self):
+        yaml_content = """comment: |
+  Notes for maintainers only
+ga id: comment_block
+"""
+        errs = find_errors_from_string(yaml_content, input_file="<string_invalid>")
+        self.assertTrue(
+            any(
+                "couldn't identify a block type: no valid combination of keys found"
+                in e.err_str.lower()
+                for e in errs
+            ),
+            f"Expected comment+ga id no-type validation error, got: {errs}",
+        )
+
+    def test_comment_and_modifier_without_type_block_invalid(self):
+        yaml_content = """comment: |
+  Notes for maintainers only
+mandatory: True
+"""
+        errs = find_errors_from_string(yaml_content, input_file="<string_invalid>")
+        self.assertTrue(
+            any(
+                "couldn't identify a block type: no valid combination of keys found"
+                in e.err_str.lower()
+                for e in errs
+            ),
+            f"Expected comment+mandatory no-type validation error, got: {errs}",
+        )
+
     def test_accessibility_mode_still_reports_yaml_parse_errors(self):
         yaml_content = """question: |
   Bad yaml
