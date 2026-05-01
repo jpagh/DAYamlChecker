@@ -39,10 +39,10 @@ ALL_ERROR_CODE_FIXTURES = (
     LARGE_INVALID_JINJA_SYNTAX_FIXTURE,
     LARGE_INVALID_JINJA_TEMPLATE_FIXTURE,
 )
-ACCESSIBILITY_MESSAGE_CODES = {
+ACCESSIBILITY_ERROR_CODES = {
     code
     for code in MESSAGE_DEFINITIONS
-    if getattr(code, "value", str(code)).startswith("W5")
+    if getattr(code, "value", str(code)).startswith("E5")
 }
 
 
@@ -212,10 +212,10 @@ question: |
         self.assertTrue(
             any(
                 e.code == MessageCode.ACCESSIBILITY_IMAGE_MISSING_ALT_TEXT
-                and e.severity == "warning"
+                and e.severity == "error"
                 for e in errs
             ),
-            f"Expected coded accessibility warning, got: {errs}",
+            f"Expected coded accessibility error, got: {errs}",
         )
 
     def test_accessibility_file_tag_missing_alt_text(self):
@@ -649,10 +649,10 @@ fields:
         self.assertTrue(
             any(
                 e.code == MessageCode.ACCESSIBILITY_NO_LABEL_MULTI_FIELD
-                and e.severity == "warning"
+                and e.severity == "error"
                 for e in errs
             ),
-            f"Expected coded no-label accessibility warning, got: {errs}",
+            f"Expected coded no-label accessibility error, got: {errs}",
         )
 
     def test_accessibility_no_label_uses_field_variable_in_message(self):
@@ -674,7 +674,7 @@ fields:
                 and "court_county" in e.err_str
                 for e in errs
             ),
-            f"Expected no-label accessibility warning to name field variable, got: {errs}",
+            f"Expected no-label accessibility error to name field variable, got: {errs}",
         )
 
     def test_accessibility_code_only_field_allowed_multi_field_screen(self):
@@ -752,7 +752,7 @@ fields:
             f"Expected missing-label accessibility error, got: {errs}",
         )
 
-    def test_accessibility_tagged_pdf_warning_for_docx_without_setting(self):
+    def test_accessibility_tagged_pdf_error_for_docx_without_setting(self):
         yaml_content = """attachments:
   - name: Letter
     docx template file: letter_template.docx
@@ -765,11 +765,11 @@ fields:
         self.assertTrue(
             any(
                 e.code == MessageCode.ACCESSIBILITY_TAGGED_PDF_NOT_ENABLED
-                and e.severity == "warning"
+                and e.severity == "error"
                 and "docx attachment detected" in e.err_str.lower()
                 for e in errs
             ),
-            f"Expected tagged-pdf accessibility warning, got: {errs}",
+            f"Expected tagged-pdf accessibility error, got: {errs}",
         )
 
     def test_accessibility_tagged_pdf_true_in_features_suppresses_info(self):
@@ -2556,9 +2556,9 @@ class TestMessageRegistry(unittest.TestCase):
             kind = code[0]
             num = int(code[1:])
             if kind == "E":
-                # E codes must be in the range 101–399
+                # E codes must be in the range 101–599
                 self.assertGreaterEqual(num, 101, f"Invalid E-code: {code}")
-                self.assertLessEqual(num, 399, f"Invalid E-code: {code}")
+                self.assertLessEqual(num, 599, f"Invalid E-code: {code}")
             elif kind == "W":
                 # W codes must be in the range 101–699
                 self.assertGreaterEqual(num, 101, f"Invalid W-code: {code}")
@@ -2594,7 +2594,7 @@ class TestMessageRegistry(unittest.TestCase):
             num = int(code[1:])
             if kind == "E":
                 self.assertGreaterEqual(num, 101, f"Invalid E-code for {name}: {code}")
-                self.assertLessEqual(num, 399, f"Invalid E-code for {name}: {code}")
+                self.assertLessEqual(num, 599, f"Invalid E-code for {name}: {code}")
             elif kind == "W":
                 self.assertGreaterEqual(num, 101, f"Invalid W-code for {name}: {code}")
                 self.assertLessEqual(num, 699, f"Invalid W-code for {name}: {code}")
@@ -2654,7 +2654,7 @@ class TestFindErrors(unittest.TestCase):
                 MessageCode.JINJA2_SYNTAX_ERROR,
                 MessageCode.JINJA2_TEMPLATE_ERROR,
             }
-            - ACCESSIBILITY_MESSAGE_CODES
+            - ACCESSIBILITY_ERROR_CODES
         )
 
         self.assertEqual(
@@ -2672,7 +2672,7 @@ class TestFindErrors(unittest.TestCase):
 
         self.assertEqual(
             covered_codes,
-            set(MESSAGE_DEFINITIONS) - ACCESSIBILITY_MESSAGE_CODES,
+            set(MESSAGE_DEFINITIONS) - ACCESSIBILITY_ERROR_CODES,
             f"Expected fixtures to cover {sorted(MESSAGE_DEFINITIONS)}, got {sorted(covered_codes)}",
         )
 

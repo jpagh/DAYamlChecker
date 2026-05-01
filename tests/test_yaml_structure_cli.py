@@ -487,7 +487,7 @@ def test_package_main_aliases_yaml_structure_main():
     assert package_main is main
 
 
-def test_main_default_wcag_reports_warnings_without_failing():
+def test_main_default_wcag_reports_errors_and_fails():
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
         interview = root / "accessibility.yml"
@@ -501,32 +501,31 @@ def test_main_default_wcag_reports_warnings_without_failing():
             exit_code = main([str(interview)])
 
         output = stdout.getvalue().lower()
-        assert exit_code == 0
-        assert "warnings (1)" in output
-        assert "[w505]" in output
+        assert exit_code == 1
+        assert "errors (1)" in output
+        assert "[e505]" in output
         assert "accessibility: markdown image" in output
 
+    def test_main_wcag_accessibility_error_fails():
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            interview = root / "tagged-pdf-warning.yml"
+            interview.write_text(
+                "attachments:\n"
+                "  - name: My attachment\n"
+                "    docx template file: demo_template.docx\n",
+                encoding="utf-8",
+            )
 
-def test_main_wcag_warning_only_does_not_fail():
-    with TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        interview = root / "tagged-pdf-warning.yml"
-        interview.write_text(
-            "attachments:\n"
-            "  - name: My attachment\n"
-            "    docx template file: demo_template.docx\n",
-            encoding="utf-8",
-        )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main([str(interview)])
 
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
-            exit_code = main([str(interview)])
-
-        output = stdout.getvalue().lower()
-        assert exit_code == 0
-        assert "warnings (1)" in output
-        assert "[w503]" in output
-        assert "accessibility: docx attachment detected" in output
+            output = stdout.getvalue().lower()
+            assert exit_code == 1
+            assert "errors (1)" in output
+            assert "[e503]" in output
+            assert "accessibility: docx attachment detected" in output
 
 
 def test_main_warning_only_does_not_fail():
@@ -576,7 +575,7 @@ def test_main_combobox_widget_check_disabled_by_default():
         assert "screen uses `combobox`" not in output
 
 
-def test_main_can_enable_combobox_widget_warning():
+def test_main_can_enable_combobox_widget_error():
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
         interview = root / "combobox.yml"
@@ -597,9 +596,9 @@ def test_main_can_enable_combobox_widget_warning():
             )
 
         output = stdout.getvalue().lower()
-        assert exit_code == 0
-        assert "warnings (1)" in output
-        assert "[w501]" in output
+        assert exit_code == 1
+        assert "errors (1)" in output
+        assert "[e501]" in output
         assert "screen uses `combobox`" in output
 
 

@@ -38,6 +38,15 @@ prefix for non-experimental errors.
 | `E201` | Jinja2 syntax error |
 | `E202` | Jinja2 template error |
 | `E301` | Unknown YAML keys |
+| `E501` | Combobox widget is not accessible |
+| `E502` | Field label is missing on a multi-field screen |
+| `E503` | DOCX attachment is missing `tagged pdf` |
+| `E504` | Bootstrap theme CSS has low contrast |
+| `E505` | Image is missing alt text |
+| `E506` | Markdown heading levels skip |
+| `E507` | HTML heading levels skip |
+| `E508` | Link has no accessible text |
+| `E509` | Link text is too generic |
 
 ### Warnings
 
@@ -87,7 +96,7 @@ The checker includes WCAG-style checks for clear static accessibility failures i
 ```bash
 python3 -m dayamlchecker path/to/interview.yml          # WCAG checks on (default)
 python3 -m dayamlchecker --no-wcag path/to/interview.yml  # WCAG checks off
-python3 -m dayamlchecker --accessibility-error-on-widget combobox path/to/interview.yml  # opt into combobox failures
+python3 -m dayamlchecker --accessibility-error-on-widget combobox path/to/interview.yml  # opt into combobox accessibility errors
 ```
 
 Some accessibility checks are behind runtime options while the rules are still being evaluated. Right now `combobox` failures are default-off and can be enabled with `--accessibility-error-on-widget combobox`.
@@ -112,7 +121,7 @@ Optional runtime-gated accessibility checks:
 
 - `combobox` usage, including `datatype: combobox` when `--accessibility-error-on-widget combobox` is enabled
 
-Accessibility informational notes are also emitted for likely PDF accessibility issues:
+Accessibility errors are also emitted for likely PDF accessibility issues:
 
 - DOCX attachments missing `tagged pdf: True` (set this in `features` or on the attachment)
 
