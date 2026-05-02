@@ -10,6 +10,7 @@ dayaml check              # defaults to ./docassemble
 dayaml format             # defaults to ./docassemble
 dayaml check path/to/yaml-or-dir
 dayaml check --show-experimental path/to/yaml-or-dir
+dayaml check --ignore-codes W410,E301 path/to/yaml-or-dir
 dayaml format path/to/interview.yml
 
 # Backwards-compatible entry points
@@ -28,6 +29,9 @@ Validation output now includes stable message codes in the style of tools like p
 
 Use `dayaml check --show-experimental ...` to include the legacy `REAL ERROR:`
 prefix for non-experimental errors.
+
+Use `dayaml check --ignore-codes W410,E301 ...` to suppress specific
+diagnostic codes when you need to waive known findings.
 
 ### Real Errors
 

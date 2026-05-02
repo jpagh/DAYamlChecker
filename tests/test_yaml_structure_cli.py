@@ -10,7 +10,7 @@ import dayamlchecker.yaml_structure as yaml_structure
 from dayamlchecker.check_questions_urls import URLCheckResult, URLIssue
 from dayamlchecker._files import _collect_yaml_files
 from dayamlchecker.__main__ import main as package_main
-from dayamlchecker.yaml_structure import main, process_file
+from dayamlchecker.yaml_structure import main, parse_ignore_codes, process_file
 
 
 def _write_valid_question(path: Path) -> None:
@@ -211,6 +211,35 @@ def test_cli_file_with_warnings_reports_warning_status():
         assert "errors" not in output.lower()
 
 
+def test_parse_ignore_codes_normalizes_comma_separated_codes():
+    assert parse_ignore_codes(" w410, E301 ,, c101 ") == frozenset(
+        {"W410", "E301", "C101"}
+    )
+
+
+def test_cli_process_file_can_ignore_warning_codes():
+    with TemporaryDirectory() as tmp:
+        warning_file = Path(tmp) / "warning.yml"
+        warning_file.write_text(
+            "---\n"
+            "question: Hello\n"
+            "fields:\n"
+            "  - Preferred salutation: preferred_salutation\n"
+            "  - Follow up: follow_up\n"
+            "    show if:\n"
+            '      code: preferred_salutation == "Ms."\n',
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            result = process_file(str(warning_file), ignore_codes=frozenset({"W410"}))
+        assert result == "ok"
+        output = buf.getvalue()
+        assert "ok:" in output
+        assert "[W410]" not in output
+        assert "warnings (" not in output
+
+
 def test_cli_file_with_conventions_reports_convention_status():
     with TemporaryDirectory() as tmp:
         convention_file = Path(tmp) / "convention.yml"
@@ -245,6 +274,28 @@ def test_cli_main_exits_nonzero_when_any_file_has_errors():
 
         with patch("sys.argv", ["dayamlchecker", str(bad)]):
             assert main() == 1
+
+
+def test_cli_main_can_ignore_error_codes_from_flag():
+    with TemporaryDirectory() as tmp:
+        bad = Path(tmp) / "bad.yml"
+        bad.write_text(
+            "---\nquestion: Hello\nquestion: Again\nfield: my_var\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+
+        with redirect_stdout(buf):
+            with patch(
+                "sys.argv", ["dayamlchecker", "--ignore-codes", "e101", str(bad)]
+            ):
+                result = main()
+
+        assert result == 0
+        output = buf.getvalue()
+        assert "ok:" in output
+        assert "[E101]" not in output
+        assert "0 errors" in output
 
 
 def test_cli_main_exits_zero_when_file_has_only_warnings():

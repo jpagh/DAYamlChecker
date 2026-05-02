@@ -96,6 +96,12 @@ space_in_str = re.compile("^[^ ]*['\"].* .*['\"][^ ]*$")
 ValidatorError = tuple[str, int, str]
 
 
+def parse_ignore_codes(raw_codes: str) -> frozenset[str]:
+    return frozenset(
+        code.strip().upper() for code in raw_codes.split(",") if code.strip()
+    )
+
+
 def _message_severity(code: str | None) -> Literal["error", "warning", "convention"]:
     if code is None:
         return "error"
@@ -1994,6 +2000,7 @@ def process_file(
     show_experimental: bool = False,
     lint_mode: str = DEFAULT_LINT_MODE,
     runtime_options: Optional[RuntimeOptions] = None,
+    ignore_codes: frozenset[str] = frozenset(),
 ) -> Literal["ok", "warning", "error", "skipped"]:
     """Process a single file and report its validation status.
 
@@ -2037,6 +2044,11 @@ def process_file(
         lint_mode=lint_mode,
         runtime_options=runtime_options,
     )
+    all_errors = [
+        err
+        for err in all_errors
+        if err.code is None or err.code.upper() not in ignore_codes
+    ]
 
     if len(all_errors) == 0:
         if not quiet:
@@ -2104,6 +2116,13 @@ def main(argv: list[str] | None = None) -> int:
         "--no-summary",
         action="store_true",
         help="Do not print the summary line after processing",
+    )
+    parser.add_argument(
+        "--ignore-codes",
+        default="",
+        help=(
+            "Comma-separated diagnostic codes to suppress, " 'for example: "W410,E301"'
+        ),
     )
     parser.add_argument(
         "--show-experimental",
@@ -2200,6 +2219,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     lint_mode = ACCESSIBILITY_LINT_MODE if args.wcag else DEFAULT_LINT_MODE
+    ignore_codes = parse_ignore_codes(args.ignore_codes)
     runtime_options = RuntimeOptions(
         accessibility_error_on_widgets=frozenset(
             widget.strip().lower()
@@ -2238,6 +2258,7 @@ def main(argv: list[str] | None = None) -> int:
             show_experimental=args.show_experimental,
             lint_mode=lint_mode,
             runtime_options=runtime_options,
+            ignore_codes=ignore_codes,
         )
         if status == "ok":
             files_ok += 1
