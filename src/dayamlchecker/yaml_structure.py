@@ -673,13 +673,23 @@ class DAFields:
                         )
                     ]
                 return
-            # Single-field shorthand: fields is a bare dict describing one field.
-            # Docassemble allows omitting the surrounding list when there is exactly
-            # one field.  Accept it silently if it has at least one recognised key;
-            # otherwise flag it so genuinely broken dicts are still caught.
             if x.keys() & self._field_item_keys:
+                self.errors = [
+                    _validator_error(
+                        MessageCode.FIELDS_DICT_KEYS,
+                        detail='This looks like a single field written as a dict; even one field must be written as a list item starting with "-".',
+                    )
+                ]
                 return
-            self.errors = [_validator_error(MessageCode.FIELDS_DICT_KEYS, value=x)]
+            self.errors = [
+                _validator_error(
+                    MessageCode.FIELDS_DICT_KEYS,
+                    detail=(
+                        'This dict is missing both a field entry and a "code" key: '
+                        f"{x}"
+                    ),
+                )
+            ]
             return
         if not isinstance(x, list):
             self.errors = [_validator_error(MessageCode.FIELDS_TYPE, value=x)]

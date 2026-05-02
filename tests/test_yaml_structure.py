@@ -1655,21 +1655,16 @@ fields:
 continue button field: interrogatory_questions
 """
         errs = find_errors_from_string(valid, input_file="<string_valid>")
-        field_errors = [
-            e
-            for e in errs
-            if "fields should be a list" in e.err_str.lower()
-            or "fields dict must have" in e.err_str.lower()
-        ]
+        field_errors = [e for e in errs if e.code == MessageCode.FIELDS_DICT_KEYS]
         self.assertEqual(
             len(field_errors),
             0,
             f"Expected no fields-shape errors, got: {field_errors}",
         )
 
-    def test_fields_single_field_dict_shorthand_no_errors(self):
-        """Valid: fields as a bare dict (single-field shorthand) is legal docassemble."""
-        valid = """
+    def test_fields_single_field_dict_shorthand_errors_with_list_guidance(self):
+        """Error: a single field under fields must still be written as a YAML list item."""
+        invalid = """
 question: |
   What venue?
 fields:
@@ -1682,17 +1677,15 @@ fields:
     - label: ":landmark: County Circuit Court"
       value: circuit
 """
-        errs = find_errors_from_string(valid, input_file="<string_valid>")
-        field_errors = [
-            e
-            for e in errs
-            if "fields should be a list" in e.err_str.lower()
-            or "fields dict must have" in e.err_str.lower()
-        ]
-        self.assertEqual(
-            len(field_errors),
-            0,
-            f"Expected no fields-shape errors, got: {field_errors}",
+        errs = find_errors_from_string(invalid, input_file="<string_invalid>")
+        self.assertTrue(
+            any(
+                e.code == MessageCode.FIELDS_DICT_KEYS
+                and "fields must be a yaml list of field items" in e.err_str.lower()
+                and "single field written as a dict" in e.err_str.lower()
+                for e in errs
+            ),
+            f"Expected fields bare-dict guidance error, got: {errs}",
         )
 
     def test_fields_mako_templates_valid(self):
@@ -2365,8 +2358,8 @@ class TestDAFields(unittest.TestCase):
         self.assertEqual(len(v.errors), 1)
         self.assertIn("code", v.errors[0][0])
 
-    def test_fields_single_field_dict_shorthand_no_error(self):
-        """fields: can be a bare dict (single-field shorthand) in docassemble."""
+    def test_fields_single_field_dict_shorthand_errors(self):
+        """fields: bare dict shorthand should be rejected with list guidance."""
         from dayamlchecker.yaml_structure import DAFields
 
         v = DAFields(
@@ -2377,13 +2370,16 @@ class TestDAFields(unittest.TestCase):
                 "choices": ["admin", "circuit"],
             }
         )
-        self.assertEqual(v.errors, [])
+        self.assertEqual(len(v.errors), 1)
+        self.assertIn("fields must be a YAML list of field items", v.errors[0][0])
+        self.assertIn("single field written as a dict", v.errors[0][0])
 
-    def test_fields_single_field_dict_with_only_field_key_no_error(self):
+    def test_fields_single_field_dict_with_only_field_key_errors(self):
         from dayamlchecker.yaml_structure import DAFields
 
         v = DAFields({"field": "my_var", "datatype": "text"})
-        self.assertEqual(v.errors, [])
+        self.assertEqual(len(v.errors), 1)
+        self.assertIn("fields must be a YAML list of field items", v.errors[0][0])
 
     def test_fields_dict_code_non_string_error(self):
         from dayamlchecker.yaml_structure import DAFields

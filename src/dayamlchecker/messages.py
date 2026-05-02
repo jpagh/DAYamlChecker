@@ -190,8 +190,8 @@ MESSAGE_DEFINITIONS: dict[str, MessageDefinition] = {
     ),
     MessageCode.FIELDS_DICT_KEYS: MessageDefinition(
         code=MessageCode.FIELDS_DICT_KEYS,
-        summary="fields dict has no recognized field or code key",
-        template='fields dict must have a recognized field key or "code" key, is {value}',
+        summary="fields must be a list unless using fields: {code: ...}",
+        template='fields must be a YAML list of field items. A dict is only valid for "fields: {{code: ...}}". {detail}',
     ),
     MessageCode.FIELDS_TYPE: MessageDefinition(
         code=MessageCode.FIELDS_TYPE,
