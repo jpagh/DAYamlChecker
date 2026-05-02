@@ -189,6 +189,51 @@ def test_cli_no_files_found_exits_nonzero():
             assert main() == 1
 
 
+def test_cli_main_defaults_to_current_directory_when_no_files_passed(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        docassemble_dir = root / "docassemble"
+        docassemble_dir.mkdir()
+        good = docassemble_dir / "good.yml"
+        good.write_text("---\nquestion: Hello\nfield: my_var\n", encoding="utf-8")
+
+        monkeypatch.chdir(root)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            result = main([])
+
+        assert result == 0
+        output = buf.getvalue()
+        assert output.startswith(".\n")
+        assert "1 ok" in output
+
+
+def test_cli_main_no_files_reads_pyproject_args_from_cwd(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n\n'
+            "[tool.dayaml]\n"
+            'args = ["--no-url-check"]\n',
+            encoding="utf-8",
+        )
+        interview = root / "docassemble" / "Demo" / "data" / "questions" / "test.yml"
+        _write_valid_question(interview)
+
+        called = False
+
+        def fake_run_url_check(**kwargs):
+            nonlocal called
+            called = True
+            return URLCheckResult(checked_url_count=0, ignored_url_count=0, issues=())
+
+        monkeypatch.setattr(yaml_structure, "run_url_check", fake_run_url_check)
+        monkeypatch.chdir(root)
+
+        assert main([]) == 0
+        assert called is False
+
+
 def test_cli_jinja_file_prints_ok_jinja():
     with TemporaryDirectory() as tmp:
         jinja_file = Path(tmp) / "interview.yml"

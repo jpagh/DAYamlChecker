@@ -493,6 +493,7 @@ def format_yaml_file(
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
+    raw_argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
         description="Format Python code blocks in docassemble YAML files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -508,7 +509,7 @@ Examples:
     )
     parser.add_argument(
         "files",
-        nargs="+",
+        nargs="*",
         type=Path,
         help="YAML files or directories to format (directories are searched recursively)",
     )
@@ -548,7 +549,9 @@ Examples:
         help="Do not print the summary line after processing",
     )
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
+    if not args.files:
+        args.files = [Path.cwd()]
 
     config = FormatterConfig(
         black_line_length=args.line_length,

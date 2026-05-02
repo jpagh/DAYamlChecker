@@ -2306,10 +2306,13 @@ def main(argv: list[str] | None = None) -> int:
     raw_argv = sys.argv[1:] if argv is None else argv
     bootstrap_parser = _build_arg_parser(require_files=False)
     bootstrap_args, _ = bootstrap_parser.parse_known_args(raw_argv)
-    config_cli_args = _collect_dayaml_cli_args(bootstrap_args.files)
+    bootstrap_files = bootstrap_args.files or [Path.cwd()]
+    config_cli_args = _collect_dayaml_cli_args(bootstrap_files)
 
-    parser = _build_arg_parser()
+    parser = _build_arg_parser(require_files=False)
     args = parser.parse_args([*config_cli_args, *raw_argv])
+    if not args.files:
+        args.files = [Path.cwd()]
 
     lint_mode = ACCESSIBILITY_LINT_MODE if args.wcag else DEFAULT_LINT_MODE
     ignore_codes = _collect_dayaml_ignore_codes(args.files) | parse_ignore_codes(

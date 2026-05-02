@@ -11,8 +11,8 @@ def _print_help(output_stream: TextIO) -> None:
     print(
         "usage: dayaml <command> [<args>]\n\n"
         "Commands:\n"
-        "  check   Validate Docassemble YAML files (defaults to ./docassemble)\n"
-        "  format  Format Python code blocks in Docassemble YAML files (defaults to ./docassemble)\n\n"
+        "  check   Validate Docassemble YAML files (defaults to the current working directory)\n"
+        "  format  Format Python code blocks in Docassemble YAML files (defaults to the current working directory)\n\n"
         "Use 'dayaml <command> --help' for command-specific options.\n"
         "The 'check' command supports '--show-experimental'/\"--no-show-experimental\" to control inclusion of the legacy REAL ERROR prefix.",
         file=output_stream,
@@ -32,12 +32,8 @@ def main(argv: list[str] | None = None) -> int:
 
     command, *command_args = args
     if command == "check":
-        if not command_args:
-            command_args = ["./docassemble"]
         return check_main(command_args)
     if command == "format":
-        if not command_args:
-            command_args = ["./docassemble"]
         return format_main(command_args)
 
     print(f"Unknown command: {command}", file=sys.stderr)

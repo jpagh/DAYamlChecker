@@ -6,8 +6,8 @@ An LSP for Docassemble YAML Interviews
 
 ```bash
 pip install .
-dayaml check              # defaults to ./docassemble
-dayaml format             # defaults to ./docassemble
+dayaml check              # defaults to the current project; usually scans ./docassemble
+dayaml format             # defaults to the current project; usually scans ./docassemble
 dayaml check path/to/yaml-or-dir
 dayaml check --show-experimental path/to/yaml-or-dir
 dayaml check --ignore-codes E410,E301 path/to/yaml-or-dir
@@ -15,6 +15,8 @@ dayaml check --format-on-success --no-url-check path/to/yaml-or-dir
 dayaml format path/to/interview.yml
 
 # Backwards-compatible entry points
+python3 -m dayamlchecker          # defaults to the current project; usually scans ./docassemble
+dayamlchecker                     # defaults to the current project; usually scans ./docassemble
 python3 -m dayamlchecker `find . -name "*.yml" -path "*/questions/*" -not -path "*/.venv/*" -not -path "*/build/*"` # i.e. a space separated list of files
 dayamlchecker `find . -name "*.yml" -path "*/questions/*" -not -path "*/.venv/*" -not -path "*/build/*"`
 dayamlchecker-fmt path/to/interview.yml
@@ -46,6 +48,13 @@ args = ["--no-url-check"]
 When you pass a project root that contains `pyproject.toml`, `dayaml` scans the
 configured `yaml_path` relative to that file. If `yaml_path` is omitted, it
 defaults to `docassemble`.
+
+When you omit file arguments, `dayaml check`, `dayaml format`, `dayamlchecker`,
+and `dayamlchecker-fmt` all start from the current working directory. If that
+directory contains a `pyproject.toml` (or is inside a project that does), they
+then resolve `tool.dayaml.yaml_path` from the nearest project config. In the
+common case where `yaml_path` is not set, the practical result is that running
+these commands from a project root will scan `./docassemble`.
 
 `tool.dayaml.args` lets you set checker CLI defaults in the project config.
 Those args are applied before the actual command-line args, so an explicit CLI

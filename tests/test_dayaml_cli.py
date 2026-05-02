@@ -87,7 +87,7 @@ def test_dayaml_help_lists_commands():
     assert result.returncode == 0
     assert "check" in result.stdout
     assert "format" in result.stdout
-    assert "defaults to ./docassemble" in result.stdout
+    assert "defaults to the current working directory" in result.stdout
 
 
 def test_dayaml_requires_known_command():

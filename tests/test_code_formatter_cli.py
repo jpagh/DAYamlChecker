@@ -1,4 +1,5 @@
 import io
+import os
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -294,6 +295,26 @@ def test_formatter_no_yaml_files_found():
         result = _run_formatter(str(txt))
         assert result.returncode == 1
         assert "no yaml files found" in result.stderr.lower()
+
+
+def test_formatter_defaults_to_current_directory():
+    with TemporaryDirectory() as tmp:
+        docassemble_dir = Path(tmp) / "docassemble"
+        docassemble_dir.mkdir()
+        interview = docassemble_dir / "interview.yml"
+        interview.write_text("---\ncode: |\n  x=1\n", encoding="utf-8")
+        previous_cwd = Path.cwd()
+
+        try:
+            os.chdir(tmp)
+            result = _run_formatter()
+        finally:
+            os.chdir(previous_cwd)
+
+        assert result.returncode == 0
+        assert "interview.yml" in result.stdout
+        assert "reformatted" in result.stdout
+        assert interview.read_text(encoding="utf-8") == "---\ncode: |\n  x = 1\n"
 
 
 def test_formatter_display_uses_absolute_path_for_file_outside_bases():
