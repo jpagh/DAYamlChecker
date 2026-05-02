@@ -568,6 +568,23 @@ Examples:
     def _emit_error(message: str) -> None:
         print(message, file=sys.stderr)
 
+    progress_line_active = False
+
+    def _emit_dot() -> None:
+        nonlocal progress_line_active
+        print(".", end="", flush=True)
+        progress_line_active = True
+
+    def _finish_progress_line() -> None:
+        nonlocal progress_line_active
+        if progress_line_active:
+            print()
+            progress_line_active = False
+
+    def _emit_line(message: str) -> None:
+        _finish_progress_line()
+        print(message)
+
     # Collect all YAML files from paths (handles directories recursively)
     yaml_files = _collect_yaml_files(args.files, check_all=args.check_all)
     if not yaml_files:
@@ -596,25 +613,29 @@ Examples:
             if changed:
                 files_changed += 1
                 if args.check:
-                    print(f"Would reformat: {_display(file_path)}")
+                    _emit_line(f"Would reformat: {_display(file_path)}")
                     exit_code = 1
                 elif not args.quiet:
-                    print(f"reformatted: {_display(file_path)}")
+                    _emit_line(f"reformatted: {_display(file_path)}")
             else:
                 files_unchanged += 1
-                if not args.check and not args.quiet:
-                    print(f"unchanged: {_display(file_path)}")
+                if not args.quiet:
+                    _emit_dot()
 
         except Exception as e:
             files_error += 1
             exit_code = 1
+            _finish_progress_line()
             _emit_error(f"error: {_display(file_path)}: {e}")
 
     if not args.check and not args.quiet and not args.no_summary:
+        _finish_progress_line()
         total = files_changed + files_unchanged + files_error
         print(
             f"Summary: {files_changed} reformatted, {files_unchanged} unchanged, {files_error} errors ({total} total)"
         )
+    elif not args.quiet:
+        _finish_progress_line()
 
     return exit_code
 

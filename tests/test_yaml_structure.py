@@ -2839,6 +2839,15 @@ class TestProcessFile(unittest.TestCase):
         self.assertIn("skipped", out.getvalue())
         self.assertNotIn("error", out.getvalue().lower())
 
+    def test_process_ignored_da_filename_uses_line_reporter(self):
+        from dayamlchecker.yaml_structure import process_file
+
+        messages = []
+        result = process_file("/tmp/documentation.yml", line_reporter=messages.append)
+
+        self.assertEqual(result, "skipped")
+        self.assertEqual(messages, ["skipped: /tmp/documentation.yml"])
+
     def test_process_jinja_file_default_mode_prints_ok_status(self):
         """Default mode prints the file name and ok (jinja) status per-file."""
         import io
@@ -2857,6 +2866,65 @@ class TestProcessFile(unittest.TestCase):
         output = out.getvalue()
         self.assertIn("ok (jinja)", output)
         self.assertNotIn("Jinja-rendered output", output)
+
+    def test_process_warning_file_uses_progress_line_reporter(self):
+        import io
+
+        from dayamlchecker.yaml_structure import (
+            _ProgressOutput,
+            YAMLError,
+            process_file,
+        )
+
+        path = self._write_temp("---\nquestion: Hello\nfield: my_var\n")
+        out = io.StringIO()
+        progress = _ProgressOutput()
+        warning = YAMLError(
+            err_str="Warning: heads up",
+            line_number=2,
+            file_name="warning.yml",
+        )
+        try:
+            with patch("sys.stdout", out):
+                with patch(
+                    "dayamlchecker.yaml_structure.find_errors_from_string",
+                    return_value=[warning],
+                ):
+                    progress.dot()
+                    result = process_file(path, line_reporter=progress.line)
+        finally:
+            import os
+
+            os.unlink(path)
+
+        self.assertEqual(result, "warning")
+        output = out.getvalue()
+        self.assertTrue(output.startswith(".\nwarnings ("), output)
+
+    def test_process_convention_file_uses_line_reporter(self):
+        from dayamlchecker.yaml_structure import YAMLError, process_file
+
+        path = self._write_temp("---\nquestion: Hello\nfield: my_var\n")
+        messages = []
+        convention = YAMLError(
+            err_str="Info: style note",
+            line_number=2,
+            file_name="convention.yml",
+        )
+        try:
+            with patch(
+                "dayamlchecker.yaml_structure.find_errors_from_string",
+                return_value=[convention],
+            ):
+                result = process_file(path, line_reporter=messages.append)
+        finally:
+            import os
+
+            os.unlink(path)
+
+        self.assertEqual(result, "warning")
+        self.assertEqual(len(messages), 1)
+        self.assertIn("conventions (", messages[0])
 
 
 class TestDAFieldsDeepPaths(unittest.TestCase):

@@ -45,7 +45,7 @@ def test_dayaml_check_defaults_to_current_directory():
             os.chdir(previous_cwd)
 
         assert result.returncode == 0
-        assert "good.yml" in result.stdout
+        assert result.stdout.startswith(".\n")
         assert "1 ok" in result.stdout
 
 

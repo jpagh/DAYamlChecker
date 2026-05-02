@@ -308,7 +308,7 @@ def test_formatter_display_uses_absolute_path_for_file_outside_bases():
             result = _run_formatter(str(base))
 
         assert result.returncode == 0
-        assert str(outside.resolve()) in result.stdout
+        assert result.stdout.startswith(".\n")
 
 
 def test_formatter_display_prefers_path_relative_to_cwd(monkeypatch):
@@ -327,10 +327,7 @@ def test_formatter_display_prefers_path_relative_to_cwd(monkeypatch):
             monkeypatch.chdir(previous_cwd)
 
         assert result.returncode == 0
-        assert (
-            "unchanged: docassemble/WorkflowDocs/data/questions/test.yml"
-            in result.stdout
-        )
+        assert result.stdout.startswith(".\n")
 
 
 def test_formatter_check_mode_does_not_write():
@@ -356,6 +353,17 @@ def test_formatter_check_mode_unchanged_exits_zero():
         result = _run_formatter("--check", str(f))
 
         assert result.returncode == 0
+
+
+def test_formatter_check_mode_unchanged_prints_dot_with_newline():
+    with TemporaryDirectory() as tmp:
+        f = Path(tmp) / "interview.yml"
+        f.write_text("---\ncode: |\n  x = 1\n", encoding="utf-8")
+
+        result = _run_formatter("--check", str(f))
+
+        assert result.returncode == 0
+        assert result.stdout == ".\n"
 
 
 def test_formatter_no_summary_flag():

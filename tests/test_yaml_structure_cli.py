@@ -368,7 +368,7 @@ def test_cli_main_can_ignore_error_codes_from_flag():
 
         assert result == 0
         output = buf.getvalue()
-        assert "ok:" in output
+        assert output.startswith(".\n")
         assert "[E101]" not in output
         assert "0 errors" in output
 
@@ -426,7 +426,7 @@ def test_cli_main_reads_ignore_codes_from_parent_pyproject():
 
         assert result == 0
         output = buf.getvalue()
-        assert "ok:" in output
+        assert output.startswith(".\n")
         assert "[E410]" not in output
         assert "1 ok" in output
 
@@ -630,7 +630,7 @@ def test_cli_display_falls_back_to_absolute_path_when_not_under_base():
                     result = main()
 
         assert result == 0
-        assert str(outside.resolve()) in buf.getvalue()
+        assert buf.getvalue().startswith(".\n")
 
 
 def test_cli_display_prefers_path_relative_to_cwd(monkeypatch):
@@ -650,7 +650,20 @@ def test_cli_display_prefers_path_relative_to_cwd(monkeypatch):
             monkeypatch.chdir(previous_cwd)
 
         assert result == 0
-        assert "ok: docassemble/WorkflowDocs/data/questions/test.yml" in buf.getvalue()
+        assert buf.getvalue().startswith(".\n")
+
+
+def test_cli_main_no_summary_still_ends_dot_line():
+    with TemporaryDirectory() as tmp:
+        good = Path(tmp) / "good.yml"
+        good.write_text("---\nquestion: Hello\nfield: my_var\n", encoding="utf-8")
+        buf = io.StringIO()
+
+        with redirect_stdout(buf):
+            result = main(["--no-summary", "--no-url-check", str(good)])
+
+        assert result == 0
+        assert buf.getvalue() == ".\n"
 
 
 def test_cli_display_path_used_in_output():

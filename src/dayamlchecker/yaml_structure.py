@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import re
 import sys
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional, cast
 
 import esprima  # type: ignore[import-untyped]
 from mako.exceptions import (  # type: ignore[import-untyped]
@@ -71,6 +71,26 @@ class RuntimeOptions:
         return AccessibilityLintOptions(
             error_on_widgets=self.accessibility_error_on_widgets
         )
+
+
+class _ProgressOutput:
+    def __init__(self) -> None:
+        self._line_active = False
+
+    def dot(self) -> None:
+        print(".", end="", flush=True)
+        self._line_active = True
+
+    def line(self, message: str) -> None:
+        if self._line_active:
+            print()
+            self._line_active = False
+        print(message)
+
+    def finish(self) -> None:
+        if self._line_active:
+            print()
+            self._line_active = False
 
 
 # Global identifiers for _extract_conditional_fields_from_doc below. Should cover all show/hide style modifiers
@@ -2015,6 +2035,8 @@ def process_file(
     lint_mode: str = DEFAULT_LINT_MODE,
     runtime_options: Optional[RuntimeOptions] = None,
     ignore_codes: frozenset[str] = frozenset(),
+    ok_reporter: Callable[[], None] | None = None,
+    line_reporter: Callable[[str], None] | None = None,
 ) -> Literal["ok", "warning", "error", "skipped"]:
     """Process a single file and report its validation status.
 
@@ -2044,7 +2066,11 @@ def process_file(
     ]:
         if input_file.endswith(dumb_da_file):
             if not quiet:
-                print(f"skipped: {display_path or input_file}")
+                message = f"skipped: {display_path or input_file}"
+                if line_reporter is not None:
+                    line_reporter(message)
+                else:
+                    print(message)
             return "skipped"
 
     with open(input_file, "r", encoding="utf-8") as f:
@@ -2066,8 +2092,11 @@ def process_file(
 
     if len(all_errors) == 0:
         if not quiet:
-            label = "ok (jinja)" if is_jinja else "ok"
-            print(f"{label}: {display_path or input_file}")
+            if ok_reporter is not None:
+                ok_reporter()
+            else:
+                label = "ok (jinja)" if is_jinja else "ok"
+                print(f"{label}: {display_path or input_file}")
         return "ok"
 
     error_findings = [err for err in all_errors if err.severity == "error"]
@@ -2077,23 +2106,31 @@ def process_file(
     jinja_note = " (jinja)" if is_jinja else ""
 
     if error_findings:
-        print(
+        header = (
             f"errors ({len(error_findings)}){jinja_note}: {display_path or input_file}"
         )
+        if line_reporter is not None:
+            line_reporter(header)
+        else:
+            print(header)
         for err in error_findings:
             print(f"  {err.format(show_experimental=show_experimental)}")
 
     if not quiet and warning_findings:
-        print(
-            f"warnings ({len(warning_findings)}){jinja_note}: {display_path or input_file}"
-        )
+        header = f"warnings ({len(warning_findings)}){jinja_note}: {display_path or input_file}"
+        if line_reporter is not None:
+            line_reporter(header)
+        else:
+            print(header)
         for err in warning_findings:
             print(f"  {err.format(show_experimental=show_experimental)}")
 
     if not quiet and convention_findings:
-        print(
-            f"conventions ({len(convention_findings)}){jinja_note}: {display_path or input_file}"
-        )
+        header = f"conventions ({len(convention_findings)}){jinja_note}: {display_path or input_file}"
+        if line_reporter is not None:
+            line_reporter(header)
+        else:
+            print(header)
         for err in convention_findings:
             print(f"  {err.format(show_experimental=show_experimental)}")
 
@@ -2275,6 +2312,7 @@ def main(argv: list[str] | None = None) -> int:
     files_warning = 0
     files_error = 0
     files_skipped = 0
+    progress = _ProgressOutput() if not args.quiet else None
 
     for input_file in yaml_files:
         status = process_file(
@@ -2285,6 +2323,8 @@ def main(argv: list[str] | None = None) -> int:
             lint_mode=lint_mode,
             runtime_options=runtime_options,
             ignore_codes=ignore_codes,
+            ok_reporter=progress.dot if progress is not None else None,
+            line_reporter=progress.line if progress is not None else None,
         )
         if status == "ok":
             files_ok += 1
@@ -2314,15 +2354,19 @@ def main(argv: list[str] | None = None) -> int:
             unreachable_severity=args.unreachable_url_severity,
         )
         if not args.quiet:
+            cast(_ProgressOutput, progress).finish()
             print_url_check_report(url_check_result)
         if url_check_result.has_errors():
             url_check_failed = True
 
     if not args.quiet and not args.no_summary:
+        cast(_ProgressOutput, progress).finish()
         total = files_ok + files_warning + files_error + files_skipped
         print(
             f"Summary: {files_ok} ok, {files_warning} warnings, {files_error} errors, {files_skipped} skipped ({total} total)"
         )
+    elif progress is not None:
+        progress.finish()
 
     return 1 if files_error > 0 or url_check_failed else 0
 
