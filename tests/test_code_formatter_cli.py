@@ -94,6 +94,28 @@ def test_formatter_collect_yaml_files_skips_ignored_root_directory_itself():
         assert collected == []
 
 
+def test_formatter_collect_yaml_files_reads_yaml_path_from_pyproject_root():
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n\n'
+            "[tool.dayaml]\n"
+            'yaml_path = "interviews"\n',
+            encoding="utf-8",
+        )
+        configured_yaml = root / "interviews" / "formatter.yml"
+        default_yaml = root / "docassemble" / "ignored.yml"
+        configured_yaml.parent.mkdir(parents=True)
+        default_yaml.parent.mkdir(parents=True)
+
+        configured_yaml.write_text("question: configured\n", encoding="utf-8")
+        default_yaml.write_text("question: default\n", encoding="utf-8")
+
+        collected = _collect_yaml_files([root])
+
+        assert [path.resolve() for path in collected] == [configured_yaml.resolve()]
+
+
 def _run_formatter(*args: str) -> RunResult:
     stdout_buf = io.StringIO()
     stderr_buf = io.StringIO()

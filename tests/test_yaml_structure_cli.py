@@ -112,6 +112,49 @@ def test_collect_yaml_files_can_disable_default_ignores():
         )
 
 
+def test_collect_yaml_files_uses_docassemble_when_root_has_pyproject():
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n',
+            encoding="utf-8",
+        )
+        root_level_yaml = root / "visible.yml"
+        docassemble_yaml = (
+            root / "docassemble" / "pkg" / "data" / "questions" / "test.yml"
+        )
+        docassemble_yaml.parent.mkdir(parents=True)
+
+        root_level_yaml.write_text("question: visible\n", encoding="utf-8")
+        docassemble_yaml.write_text("question: test\n", encoding="utf-8")
+
+        collected = _collect_yaml_files([root])
+
+        assert [path.resolve() for path in collected] == [docassemble_yaml.resolve()]
+
+
+def test_collect_yaml_files_reads_yaml_path_from_pyproject():
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n\n'
+            "[tool.dayaml]\n"
+            'yaml_path = "interviews"\n',
+            encoding="utf-8",
+        )
+        configured_yaml = root / "interviews" / "test.yml"
+        default_yaml = root / "docassemble" / "ignored.yml"
+        configured_yaml.parent.mkdir(parents=True)
+        default_yaml.parent.mkdir(parents=True)
+
+        configured_yaml.write_text("question: configured\n", encoding="utf-8")
+        default_yaml.write_text("question: default\n", encoding="utf-8")
+
+        collected = _collect_yaml_files([root])
+
+        assert [path.resolve() for path in collected] == [configured_yaml.resolve()]
+
+
 # ---------------------------------------------------------------------------
 # CLI (main()) / process_file() integration tests
 # ---------------------------------------------------------------------------
@@ -321,6 +364,89 @@ def test_cli_main_exits_zero_when_file_has_only_warnings():
         output = buf.getvalue()
         assert "1 warnings" in output
         assert "0 errors" in output
+
+
+def test_cli_main_reads_ignore_codes_from_parent_pyproject():
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n\n'
+            "[tool.dayaml]\n"
+            'ignore_codes = ["W410"]\n',
+            encoding="utf-8",
+        )
+        warning_file = root / "docassemble" / "warning.yml"
+        warning_file.parent.mkdir(parents=True)
+        warning_file.write_text(
+            "---\n"
+            "question: Hello\n"
+            "fields:\n"
+            "  - Preferred salutation: preferred_salutation\n"
+            "  - Follow up: follow_up\n"
+            "    show if:\n"
+            '      code: preferred_salutation == "Ms."\n',
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+
+        with redirect_stdout(buf):
+            result = main(["--no-url-check", str(warning_file.parent)])
+
+        assert result == 0
+        output = buf.getvalue()
+        assert "ok:" in output
+        assert "[W410]" not in output
+        assert "1 ok" in output
+
+
+def test_cli_main_reads_raw_args_from_pyproject(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n\n'
+            "[tool.dayaml]\n"
+            'args = ["--no-url-check"]\n',
+            encoding="utf-8",
+        )
+        interview = root / "docassemble" / "Demo" / "data" / "questions" / "test.yml"
+        _write_valid_question(interview)
+
+        called = False
+
+        def fake_run_url_check(**kwargs):
+            nonlocal called
+            called = True
+            return URLCheckResult(checked_url_count=0, ignored_url_count=0, issues=())
+
+        monkeypatch.setattr(yaml_structure, "run_url_check", fake_run_url_check)
+
+        assert yaml_structure.main([str(root)]) == 0
+        assert called is False
+
+
+def test_cli_args_override_pyproject_raw_args(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.1.0"\n\n'
+            "[tool.dayaml]\n"
+            'args = ["--no-url-check"]\n',
+            encoding="utf-8",
+        )
+        interview = root / "docassemble" / "Demo" / "data" / "questions" / "test.yml"
+        _write_valid_question(interview)
+
+        called = False
+
+        def fake_run_url_check(**kwargs):
+            nonlocal called
+            called = True
+            return URLCheckResult(checked_url_count=0, ignored_url_count=0, issues=())
+
+        monkeypatch.setattr(yaml_structure, "run_url_check", fake_run_url_check)
+
+        assert yaml_structure.main(["--url-check", str(root)]) == 0
+        assert called is True
 
 
 def test_cli_jinja_file_with_bad_key_reports_errors():

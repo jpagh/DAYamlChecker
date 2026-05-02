@@ -18,7 +18,11 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.error import MarkedYAMLError
 
-from dayamlchecker._files import _collect_yaml_files
+from dayamlchecker._files import (
+    _collect_dayaml_cli_args,
+    _collect_dayaml_ignore_codes,
+    _collect_yaml_files,
+)
 from dayamlchecker._jinja import (
     _has_jinja_header,
     preprocess_jinja,
@@ -2088,13 +2092,13 @@ def process_file(
     return "warning"
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_arg_parser(*, require_files: bool = True) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Validate Docassemble YAML files",
     )
     parser.add_argument(
         "files",
-        nargs="+",
+        nargs="+" if require_files else "*",
         type=Path,
         help="YAML files or directories to validate (directories are searched recursively)",
     )
@@ -2216,10 +2220,22 @@ def main(argv: list[str] | None = None) -> int:
         default="warning",
         help="How to report URLs that could not be reached at all (default: warning)",
     )
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = sys.argv[1:] if argv is None else argv
+    bootstrap_parser = _build_arg_parser(require_files=False)
+    bootstrap_args, _ = bootstrap_parser.parse_known_args(raw_argv)
+    config_cli_args = _collect_dayaml_cli_args(bootstrap_args.files)
+
+    parser = _build_arg_parser()
+    args = parser.parse_args([*config_cli_args, *raw_argv])
 
     lint_mode = ACCESSIBILITY_LINT_MODE if args.wcag else DEFAULT_LINT_MODE
-    ignore_codes = parse_ignore_codes(args.ignore_codes)
+    ignore_codes = _collect_dayaml_ignore_codes(args.files) | parse_ignore_codes(
+        args.ignore_codes
+    )
     runtime_options = RuntimeOptions(
         accessibility_error_on_widgets=frozenset(
             widget.strip().lower()

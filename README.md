@@ -33,6 +33,24 @@ prefix for non-experimental errors.
 Use `dayaml check --ignore-codes W410,E301 ...` to suppress specific
 diagnostic codes when you need to waive known findings.
 
+`dayaml` also reads optional project settings from `pyproject.toml`:
+
+```toml
+[tool.dayaml]
+ignore_codes = ["E503", "W410"]
+yaml_path = "docassemble"
+args = ["--no-url-check"]
+```
+
+When you pass a project root that contains `pyproject.toml`, `dayaml` scans the
+configured `yaml_path` relative to that file. If `yaml_path` is omitted, it
+defaults to `docassemble`.
+
+`tool.dayaml.args` lets you set checker CLI defaults in the project config.
+Those args are applied before the actual command-line args, so an explicit CLI
+flag still wins. For example, `args = ["--no-url-check"]` disables URL checks
+by default, while `dayaml check --url-check ...` turns them back on for one run.
+
 ### Real Errors
 
 | Code | Meaning |
